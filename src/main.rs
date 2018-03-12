@@ -1,66 +1,26 @@
 use std::thread::spawn;
 use std::fs::File;
+use std::sync::mpsc::channel;
+use std::collections::HashMap;
 
 #[macro_use]
 extern crate log;
-extern crate rug;
 #[macro_use]
 extern crate serde_derive;
 extern crate simplelog;
 
-use rug::Float;
-use rug::Integer;
-use rug::ops::Pow;
-
 mod utils;
 mod config;
+mod event;
+mod process;
 
 use config::parse_config;
 use utils::nth_prime;
+use process::Process;
 
-#[derive(Debug)]
-struct Process {
-    pub id: u64,
-    pub prime: u64,
-    pub clock: Vec<u64>,
-}
-
-impl Process {
-    pub fn new(id: u64, prime: u64) -> Process {
-        Process {
-            id: id,
-            prime: prime,
-            clock: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-enum EventType {
-    Internal,
-    Message,
-    Receive,
-}
-
-#[derive(Debug)]
-struct Event {
-    pub vec_clock: Vec<u64>,
-    pub encoded_clock: Integer,
-    pub event_type: EventType,
-}
-
-impl Event {
-    pub fn new(clock: Vec<u64>, evc: Integer, event_type: EventType) -> Event {
-        Event {
-            vec_clock: clock.clone(),
-            encoded_clock: evc.clone(),
-            event_type,
-        }
-    }
-}
-
-fn run_thread(process: Process) {
+fn run_thread(mut process: Process) {
     info!("Thread: {}, prime: {}", process.id, process.prime);
+    process.handle_dispatch()
 }
 
 fn main() {
@@ -85,8 +45,12 @@ fn main() {
     info!("Setting up with {} threads", config.num_processes);
 
     let mut thread_handles = vec![];
+    let mut proces_map = HashMap::new();
+
     for i in 1..config.num_processes + 1 {
-        let process = Process::new(i as u64, nth_prime(i as u64));
+        let (sender, receiver) = channel();
+        proces_map.insert(i, sender);
+        let process = Process::new(i as u64, nth_prime(i as u64), receiver);
 
         thread_handles.push(spawn(move || run_thread(process)));
     }

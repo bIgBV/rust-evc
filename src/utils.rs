@@ -25,8 +25,9 @@ fn is_prime(n: u64) -> bool {
 #[test]
 fn test_is_prime() {
     assert!(!is_prime(100));
-    assert!(is_prime(17));
     assert!(!is_prime(12));
+    assert!(is_prime(17));
+    assert!(is_prime(104_729));
 }
 
 /// Generate the nth prime number
