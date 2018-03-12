@@ -7,10 +7,14 @@ use std::io::prelude::*;
 use self::failure::Error;
 
 #[derive(Debug, Deserialize)]
+/// Manages the config of the application.
 pub struct Config {
-    num_processes: i64,
+    pub num_processes: i64,
 }
 
+/// Simple function parse the config of the application.
+/// 
+/// The default config location is `~/.config/rust-evc/config.toml`
 pub fn parse_config(name: &str) -> Result<Config, Error> {
     let mut f = File::open(name)?;
 

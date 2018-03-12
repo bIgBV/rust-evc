@@ -3,7 +3,7 @@
 ///```
 /// assert!(is_prime(29));
 ///```
-fn is_prime(n: u32) -> bool {
+fn is_prime(n: u64) -> bool {
     if n <= 1 {
         return false;
     } else if n <= 3 {
@@ -34,7 +34,7 @@ fn test_is_prime() {
 /// ```
 /// assert_eq!(nth_prime(15), 47)
 /// ```
-pub fn nth_prime(n: u32) -> u32 {
+pub fn nth_prime(n: u64) -> u64 {
     let mut i = 1;
     let mut counter = 1;
 
