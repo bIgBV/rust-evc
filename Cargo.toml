@@ -1,0 +1,11 @@
+[package]
+name = "rust-evc"
+version = "0.1.0"
+authors = ["Bhargav Voleti <bhargav.voleti93@gmail.com>"]
+
+[dependencies]
+rug = "1"
+toml = "0.4.5"
+serde = "1.0.29"
+serde_derive = "1.0"
+failure = "0.1.1"
