@@ -12,16 +12,18 @@ pub enum EventType {
 
 #[derive(Debug, Clone)]
 pub struct Event {
-    pub vec_clock: Vec<u64>,
-    pub encoded_clock: Integer,
+    pub process_id: u64,
+    // pub vec_clock: Vec<u64>,
+    // pub encoded_clock: Integer,
     pub event_type: EventType,
 }
 
 impl Event {
-    pub fn new(clock: Vec<u64>, evc: Integer, event_type: EventType) -> Event {
+    pub fn new(event_type: EventType, process_id: u64) -> Event {
         Event {
-            vec_clock: clock.clone(),
-            encoded_clock: evc.clone(),
+            process_id,
+            // vec_clock: clock.clone(),
+            // encoded_clock: evc.clone(),
             event_type,
         }
     }

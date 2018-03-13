@@ -13,14 +13,21 @@ mod utils;
 mod config;
 mod event;
 mod process;
+mod dispatch;
 
 use config::parse_config;
 use utils::nth_prime;
 use process::Process;
+use dispatch::Dispatch;
 
 fn run_thread(mut process: Process) {
     info!("Thread: {}, prime: {}", process.id, process.prime);
     process.handle_dispatch()
+}
+
+fn run_dispatch(mut dispatch: Dispatch) {
+    info!("Starting dispatcher");
+    dispatch.handle_dispatch();
 }
 
 fn main() {
@@ -45,15 +52,27 @@ fn main() {
     info!("Setting up with {} threads", config.num_processes);
 
     let mut thread_handles = vec![];
-    let mut proces_map = HashMap::new();
+    let mut process_map = HashMap::new();
+
+    let (dispatch_sender, receiver) = channel();
 
     for i in 1..config.num_processes + 1 {
         let (sender, receiver) = channel();
-        proces_map.insert(i, sender);
-        let process = Process::new(i as u64, nth_prime(i as u64), receiver);
+        process_map.insert(i as u64, sender);
+
+        let process = Process::new(
+            i as u64,
+            nth_prime(i as u64),
+            receiver,
+            dispatch_sender.clone(),
+        );
 
         thread_handles.push(spawn(move || run_thread(process)));
     }
+
+    let dispatch_process = Dispatch::new(receiver, process_map);
+
+    thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
 
     for handle in thread_handles {
         handle.join().unwrap();
