@@ -40,7 +40,7 @@ fn main() {
     };
 
     simplelog::CombinedLogger::init(vec![
-        simplelog::TermLogger::new(simplelog::LevelFilter::Info, simplelog::Config::default())
+        simplelog::TermLogger::new(simplelog::LevelFilter::Error, simplelog::Config::default())
             .expect("Failed to create term logger"),
         simplelog::WriteLogger::new(
             simplelog::LevelFilter::Info,
@@ -56,7 +56,7 @@ fn main() {
 
     let (dispatch_sender, receiver) = channel();
 
-    for i in 1..config.num_processes + 1 {
+    for i in 0..config.num_processes {
         let (sender, receiver) = channel();
         process_map.insert(i as u64, sender);
 
@@ -65,6 +65,7 @@ fn main() {
             nth_prime(i as u64),
             receiver,
             dispatch_sender.clone(),
+            config.num_processes
         );
 
         thread_handles.push(spawn(move || run_thread(process)));
