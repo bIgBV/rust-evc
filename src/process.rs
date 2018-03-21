@@ -2,6 +2,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 use std::thread;
 use std::cmp::max;
+use std::sync::Arc;
 
 extern crate rand;
 extern crate rug;
@@ -10,6 +11,7 @@ use self::rug::{Assign, Integer};
 use self::rand::Rng;
 
 use super::event::{Event, EventType};
+use super::config::Config;
 
 #[derive(Debug)]
 pub struct Process {
@@ -19,6 +21,7 @@ pub struct Process {
     pub evc: Integer,
     pub receiver: Receiver<Event>,
     pub dispatch: Sender<Event>,
+    config: Arc<Config>
 }
 
 impl Process {
@@ -29,20 +32,21 @@ impl Process {
         prime: u64,
         receiver: Receiver<Event>,
         dispatch: Sender<Event>,
-        capacity: i64,
+        config: Arc<Config>
     ) -> Process {
         let mut p = Process {
             id,
             prime: Integer::from(prime),
-            vec_clock: Vec::with_capacity(capacity as usize),
+            vec_clock: Vec::with_capacity(config.num_processes as usize),
             evc: Integer::from(1),
             receiver,
             dispatch,
+            config
         };
 
         // arrays are a pain, but since the size is never going to change, we can just pre-populate
         // the vector.
-        for _ in 0..capacity {
+        for _ in 0..p.config.num_processes {
             p.vec_clock.push(0);
         }
 

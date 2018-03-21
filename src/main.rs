@@ -17,6 +17,7 @@ use std::thread::spawn;
 use std::fs::File;
 use std::sync::mpsc::channel;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[macro_use]
 extern crate log;
@@ -68,7 +69,9 @@ fn main() {
 
     let (dispatch_sender, receiver) = channel();
 
-    for i in 0..config.num_processes {
+    let shared_config = Arc::new(config);
+
+    for i in 0..shared_config.num_processes {
         let (sender, receiver) = channel();
         process_map.insert(i as u64, sender);
 
@@ -77,13 +80,13 @@ fn main() {
             nth_prime(i as u64),
             receiver,
             dispatch_sender.clone(),
-            config.num_processes,
+            shared_config.clone()
         );
 
         thread_handles.push(spawn(move || run_thread(process)));
     }
 
-    let dispatch_process = Dispatch::new(receiver, process_map, &config);
+    let dispatch_process = Dispatch::new(receiver, process_map, shared_config.clone());
 
     thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
 
