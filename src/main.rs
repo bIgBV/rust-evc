@@ -1,3 +1,18 @@
+//! This is an implementation for the Encoded Vector Clock: Using Primes to
+//! Characterize Causality in Distributed Systems by Ajay D. Kshemkalyani,
+//! Ashfaq A. Khokhar, Min Shen. The application is multi-threaded with
+//! various worker threads and a dispatcher thread counting all the events
+//! occurring in the system as well as dispatching send events randomly between
+//! the various threads.
+//!
+//! Each thread simulates a single process in a distributed system. It waits for a
+//! receive event on it's receiver end of the channel (here the channel is used as a
+//! FIFO thread safe queue) for a configurabele amount of time after which it
+//! will either performa an internal event or send a message to be dispatched.
+//!
+//! The dispatcher in turn selects a random process and dispatches the message
+//! across.
+
 use std::thread::spawn;
 use std::fs::File;
 use std::sync::mpsc::channel;
@@ -31,19 +46,16 @@ fn run_dispatch(mut dispatch: Dispatch) {
 }
 
 fn main() {
-    let config = match parse_config("/Users/bIgB/.config/rust-evc/config.toml") {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Unable to read config");
-            panic!("Error: {}", e);
-        }
-    };
+    let config = parse_config("/Users/bIgB/.config/rust-evc/config.toml").unwrap_or_else(|e| {
+        error!("Unable to read config");
+        panic!("Error: {}", e);
+    });
 
     simplelog::CombinedLogger::init(vec![
         simplelog::TermLogger::new(simplelog::LevelFilter::Error, simplelog::Config::default())
             .expect("Failed to create term logger"),
         simplelog::WriteLogger::new(
-            simplelog::LevelFilter::Info,
+            simplelog::LevelFilter::Debug,
             simplelog::Config::default(),
             File::create("rust-evc.log").expect("Failed to create log file"),
         ),
@@ -65,13 +77,13 @@ fn main() {
             nth_prime(i as u64),
             receiver,
             dispatch_sender.clone(),
-            config.num_processes
+            config.num_processes,
         );
 
         thread_handles.push(spawn(move || run_thread(process)));
     }
 
-    let dispatch_process = Dispatch::new(receiver, process_map);
+    let dispatch_process = Dispatch::new(receiver, process_map, &config);
 
     thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
 

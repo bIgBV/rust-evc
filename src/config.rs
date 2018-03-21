@@ -10,6 +10,7 @@ use self::failure::Error;
 /// Manages the config of the application.
 pub struct Config {
     pub num_processes: i64,
+    pub max_bits: u32,
 }
 
 /// Simple function parse the config of the application.

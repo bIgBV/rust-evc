@@ -6,7 +6,7 @@ use std::cmp::max;
 extern crate rand;
 extern crate rug;
 
-use self::rug::Integer;
+use self::rug::{Assign, Integer};
 use self::rand::Rng;
 
 use super::event::{Event, EventType};
@@ -14,7 +14,7 @@ use super::event::{Event, EventType};
 #[derive(Debug)]
 pub struct Process {
     pub id: u64,
-    pub prime: u64,
+    pub prime: Integer,
     pub vec_clock: Vec<u64>,
     pub evc: Integer,
     pub receiver: Receiver<Event>,
@@ -33,9 +33,9 @@ impl Process {
     ) -> Process {
         let mut p = Process {
             id,
-            prime,
+            prime: Integer::from(prime),
             vec_clock: Vec::with_capacity(capacity as usize),
-            evc: Integer::new(),
+            evc: Integer::from(1),
             receiver,
             dispatch,
         };
@@ -68,6 +68,8 @@ impl Process {
                 },
             }
         }
+
+        info!("Dispatcher stopped. Probably because max_bits is hit")
     }
 
     /// Event creator.
@@ -96,28 +98,93 @@ impl Process {
     }
 
     /// Main even handler. This updates both the vector clock and the encoded clock and
-    /// calls the appropriate event handler based on the type.
+    /// calls the appropriate event handler based on the event type.
     fn handle_event(&mut self, event: Event) {
         match event.event_type {
             EventType::Internal => {
-                self.vec_clock[self.id as usize] += 1;
+                // Update the vector clock
+                self.update_vector_clock(&event);
+
+                // update the encoded vector clock.
+                let temp = self.update_encoded_clock(&event);
+                self.evc.assign(temp);
                 self.handle_internal()
             }
             EventType::Message => {
-                self.vec_clock[self.id as usize] += 1;
+                self.update_vector_clock(&event);
+
+                let temp = self.update_encoded_clock(&event);
+                self.evc.assign(temp);
                 self.handle_message()
             }
             EventType::Receive => {
-                let temp_vec = self.vec_clock.iter().zip(event.vec_clock.iter())
-                    .map(|(x, y)| max(*x, *y))
-                    .collect();
-                self.vec_clock = temp_vec;
-                self.vec_clock[self.id as usize] += 1;
+                self.update_vector_clock(&event);
+
+                let temp = self.update_encoded_clock(&event);
+                self.evc.assign(temp);
+
                 self.handle_receive(event)
             }
         }
 
-        info!("p: {} Vec clock: {:?}", self.id, self.vec_clock);
+        debug!(
+            "p: {} Vec clock: {:?}, encoded clock: {}",
+            self.id,
+            self.vec_clock,
+            self.evc.significant_bits()
+        );
+    }
+
+    /// Updates the processe's encoded clock according to the following rules:
+    /// 
+    /// (1) Initialize ti = 1.
+    /// (2) Before an internal event happens at process Pi ,
+    ///     ti = ti ∗ pi (local tick).
+    /// (3) Before process Pi sends a message, it  rst executes
+    ///     ti = ti ∗ pi (local tick), then it sends the message pig-
+    ///     gybacked with ti .
+    /// (4) When process Pi receives a message piggybacked with
+    ///     timestamp s, it executes
+    ///     ti =LCM(s,ti)(merge);
+    ///     ti = ti ∗ pi (local tick)
+    ///     before delivering the message.
+    fn update_encoded_clock(&self, event: &Event) -> Integer {
+        match event.event_type {
+            EventType::Receive => {
+                let temp = self.evc.lcm_ref(&event.encoded_clock);
+                Integer::from(temp)
+            }
+            _ => {
+                let temp = &self.evc * &self.prime;
+                Integer::from(temp)
+            }
+        }
+    }
+
+    /// Updates the vector clock based on the following rules:
+    /// 
+    /// (1) Before an internal event happens at process `Pi`, `V[i] = V[i]+1` (local tick).
+    /// (2) Before process Pi sends a message, it first executes `V[i] = V [i] + 1` (local tick),
+    ///     then it sends the message piggybacked with V.
+    /// (3) When process Pi receives a message piggybacked with times- tamp U , it executes
+    ///     ```
+    ///     ∀k ∈[1...n],V[k]=max(V[k],U[k])(merge);
+    ///     V[i] = V[i] + 1 (local tick)
+    ///     ```
+    ///     before delivering the message.
+    fn update_vector_clock(&mut self, event: &Event) {
+        match event.event_type {
+            EventType::Receive => {
+                let temp_vec = self.vec_clock
+                    .iter()
+                    .zip(event.vec_clock.iter())
+                    .map(|(x, y)| max(*x, *y))
+                    .collect();
+                self.vec_clock = temp_vec;
+                self.vec_clock[self.id as usize] += 1;
+            }
+            _ => self.vec_clock[self.id as usize] += 1,
+        }
     }
 
     fn handle_receive(&self, event: Event) {
