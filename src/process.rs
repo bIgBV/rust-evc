@@ -22,6 +22,8 @@ pub struct Process {
 }
 
 impl Process {
+    /// Instantiates a new process. The vector is initiated with the given capacity and
+    /// the local time for all other proceses set to 0.
     pub fn new(
         id: u64,
         prime: u64,
@@ -38,6 +40,8 @@ impl Process {
             dispatch,
         };
 
+        // arrays are a pain, but since the size is never going to change, we can just pre-populate
+        // the vector.
         for _ in 0..capacity {
             p.vec_clock.push(0);
         }
@@ -53,8 +57,11 @@ impl Process {
     /// selected.
     pub fn handle_dispatch(&mut self) {
         loop {
-            match self.receiver.recv_timeout(Duration::from_millis(1000)) {
-                Ok(event) => self.handle_event(event),
+            match self.receiver.recv_timeout(Duration::from_millis(2000)) {
+                Ok(mut event) => {
+                    event.event_type = EventType::Receive;
+                    self.handle_event(event)
+                }
                 Err(e) => match e {
                     RecvTimeoutError::Timeout => self.generate_event(),
                     RecvTimeoutError::Disconnected => break, // Break out of loop, effectively shutting down thread.
@@ -101,14 +108,9 @@ impl Process {
                 self.handle_message()
             }
             EventType::Receive => {
-                let mut temp_vec = Vec::new();
-                {
-                    let it = event.vec_clock.iter().zip(self.vec_clock.iter());
-
-                    for (i, (x, y)) in it.enumerate() {
-                        temp_vec[i] = max(*x, *y);
-                    }
-                }
+                let temp_vec = self.vec_clock.iter().zip(event.vec_clock.iter())
+                    .map(|(x, y)| max(*x, *y))
+                    .collect();
                 self.vec_clock = temp_vec;
                 self.vec_clock[self.id as usize] += 1;
                 self.handle_receive(event)
@@ -136,6 +138,6 @@ impl Process {
 
     fn handle_internal(&self) {
         info!("p: {}: Performing intenral event", self.id);
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(2000));
     }
 }
