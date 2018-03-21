@@ -1,4 +1,3 @@
-
 extern crate rug;
 
 use self::rug::Integer;

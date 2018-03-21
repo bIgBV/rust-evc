@@ -21,7 +21,7 @@ pub struct Process {
     pub evc: Integer,
     pub receiver: Receiver<Event>,
     pub dispatch: Sender<Event>,
-    config: Arc<Config>
+    config: Arc<Config>,
 }
 
 impl Process {
@@ -32,7 +32,7 @@ impl Process {
         prime: u64,
         receiver: Receiver<Event>,
         dispatch: Sender<Event>,
-        config: Arc<Config>
+        config: Arc<Config>,
     ) -> Process {
         let mut p = Process {
             id,
@@ -41,7 +41,7 @@ impl Process {
             evc: Integer::from(1),
             receiver,
             dispatch,
-            config
+            config,
         };
 
         // arrays are a pain, but since the size is never going to change, we can just pre-populate
@@ -61,7 +61,9 @@ impl Process {
     /// selected.
     pub fn handle_dispatch(&mut self) {
         loop {
-            match self.receiver.recv_timeout(Duration::from_millis(2000)) {
+            match self.receiver
+                .recv_timeout(Duration::from_millis(self.config.timeout))
+            {
                 Ok(mut event) => {
                     event.event_type = EventType::Receive;
                     self.handle_event(event)
@@ -73,7 +75,7 @@ impl Process {
             }
         }
 
-        info!("Dispatcher stopped. Probably because max_bits is hit")
+        info!("p: {} closing process", self.id)
     }
 
     /// Event creator.
@@ -112,7 +114,7 @@ impl Process {
                 // update the encoded vector clock.
                 let temp = self.update_encoded_clock(&event);
                 self.evc.assign(temp);
-                self.handle_internal()
+                self.handle_internal(event)
             }
             EventType::Message => {
                 self.update_vector_clock(&event);
@@ -140,7 +142,7 @@ impl Process {
     }
 
     /// Updates the processe's encoded clock according to the following rules:
-    /// 
+    ///
     /// (1) Initialize ti = 1.
     /// (2) Before an internal event happens at process Pi ,
     ///     ti = ti ∗ pi (local tick).
@@ -166,7 +168,7 @@ impl Process {
     }
 
     /// Updates the vector clock based on the following rules:
-    /// 
+    ///
     /// (1) Before an internal event happens at process `Pi`, `V[i] = V[i]+1` (local tick).
     /// (2) Before process Pi sends a message, it first executes `V[i] = V [i] + 1` (local tick),
     ///     then it sends the message piggybacked with V.
@@ -191,10 +193,15 @@ impl Process {
         }
     }
 
+    /// Logs a receive event.
     fn handle_receive(&self, event: Event) {
         info!("p: {}: Received event from {}", self.id, event.process_id);
+        self.dispatch
+            .send(event)
+            .unwrap_or_else(|e| error!("p: {}: error dispatching event: {}", self.id, e));
     }
 
+    /// Sends a message to the dispatcher to be sent to a random process.
     fn handle_message(&self) {
         info!("p: {}: Dispatching message", self.id);
         self.dispatch
@@ -207,8 +214,14 @@ impl Process {
             .unwrap_or_else(|e| error!("p: {}: error sending message: {}", self.id, e));
     }
 
-    fn handle_internal(&self) {
+    /// Simulating an internal process. The process sleeps for a random amount of time
+    ///
+    /// TODO: select sleep duration from a random range of values.
+    fn handle_internal(&self, event: Event) {
+        self.dispatch
+            .send(event)
+            .unwrap_or_else(|e| error!("p: {}: error dispatching event: {}", self.id, e));
         info!("p: {}: Performing intenral event", self.id);
-        thread::sleep(Duration::from_millis(2000));
+        thread::sleep(Duration::from_millis(self.config.timeout));
     }
 }

@@ -46,6 +46,7 @@ impl Dispatch {
     pub fn handle_dispatch(&mut self) {
         for event in self.receiver.iter() {
             if event.encoded_clock.significant_bits() >= self.config.max_bits {
+                debug!("Closing simulation. Events: {}", self.counter);
                 break;
             }
             self.counter += 1;

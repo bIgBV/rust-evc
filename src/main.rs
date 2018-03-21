@@ -80,7 +80,7 @@ fn main() {
             nth_prime(i as u64),
             receiver,
             dispatch_sender.clone(),
-            shared_config.clone()
+            shared_config.clone(),
         );
 
         thread_handles.push(spawn(move || run_thread(process)));

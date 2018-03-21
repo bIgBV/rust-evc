@@ -1,5 +1,5 @@
 /// Test for primality of an unsigned number
-/// 
+///
 ///```
 /// assert!(is_prime(29));
 ///```
@@ -31,7 +31,7 @@ fn test_is_prime() {
 }
 
 /// Generate the nth prime number
-/// 
+///
 /// ```
 /// assert_eq!(nth_prime(15), 47)
 /// ```
@@ -46,7 +46,7 @@ pub fn nth_prime(n: u64) -> u64 {
         }
     }
 
-    return i
+    i
 }
 
 #[test]

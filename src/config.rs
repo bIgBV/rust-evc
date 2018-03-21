@@ -1,5 +1,5 @@
-extern crate toml;
 extern crate failure;
+extern crate toml;
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -11,10 +11,11 @@ use self::failure::Error;
 pub struct Config {
     pub num_processes: i64,
     pub max_bits: u32,
+    pub timeout: u64,
 }
 
 /// Simple function parse the config of the application.
-/// 
+///
 /// The default config location is `~/.config/rust-evc/config.toml`
 pub fn parse_config(name: &str) -> Result<Config, Error> {
     let mut f = File::open(name)?;
@@ -26,7 +27,6 @@ pub fn parse_config(name: &str) -> Result<Config, Error> {
 
     Ok(config)
 }
-
 
 #[test]
 fn test_parse_config() {
