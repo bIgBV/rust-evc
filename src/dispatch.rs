@@ -52,6 +52,13 @@ impl Dispatch {
             self.counter += 1;
 
             if event.event_type == EventType::Message {
+                let mut sending_process = 0;
+                if let Some(position) = self.process_ids.iter().position(|x| *x == event.process_id) {
+                    sending_process = self.process_ids.remove(position);
+                } else {
+                    panic!("Unable to find process");
+                }
+
                 if let Some(process_id) = rand::thread_rng().choose(&self.process_ids) {
                     if let Some(sender) = self.process_map.get(process_id) {
                         info!(
@@ -61,11 +68,14 @@ impl Dispatch {
                         sender
                             .send(event)
                             .unwrap_or_else(|e| error!("Error dispatcing: {}", e));
+                        
                     }
                 } else {
                     error!("Unable to select thread to dispatch to");
                     break;
                 }
+
+                self.process_ids.push(sending_process)
             }
         }
     }

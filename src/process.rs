@@ -143,17 +143,17 @@ impl Process {
 
     /// Updates the processe's encoded clock according to the following rules:
     ///
-    /// (1) Initialize ti = 1.
-    /// (2) Before an internal event happens at process Pi ,
-    ///     ti = ti ∗ pi (local tick).
-    /// (3) Before process Pi sends a message, it  rst executes
-    ///     ti = ti ∗ pi (local tick), then it sends the message pig-
-    ///     gybacked with ti .
-    /// (4) When process Pi receives a message piggybacked with
-    ///     timestamp s, it executes
-    ///     ti =LCM(s,ti)(merge);
-    ///     ti = ti ∗ pi (local tick)
-    ///     before delivering the message.
+    ///* Initialize ti = 1.
+    ///* Before an internal event happens at process Pi ,
+    ///  ti = ti ∗ pi (local tick).
+    ///* Before process Pi sends a message, it  rst executes
+    ///  ti = ti ∗ pi (local tick), then it sends the message pig-
+    ///  gybacked with ti .
+    ///* When process Pi receives a message piggybacked with
+    ///  timestamp s, it executes
+    ///  ti =LCM(s,ti)(merge);
+    ///  ti = ti ∗ pi (local tick)
+    ///  before delivering the message.
     fn update_encoded_clock(&self, event: &Event) -> Integer {
         match event.event_type {
             EventType::Receive => {
@@ -169,15 +169,17 @@ impl Process {
 
     /// Updates the vector clock based on the following rules:
     ///
-    /// (1) Before an internal event happens at process `Pi`, `V[i] = V[i]+1` (local tick).
-    /// (2) Before process Pi sends a message, it first executes `V[i] = V [i] + 1` (local tick),
-    ///     then it sends the message piggybacked with V.
-    /// (3) When process Pi receives a message piggybacked with times- tamp U , it executes
-    ///     ```
-    ///     ∀k ∈[1...n],V[k]=max(V[k],U[k])(merge);
-    ///     V[i] = V[i] + 1 (local tick)
-    ///     ```
-    ///     before delivering the message.
+    /// * Before an internal event happens at process `Pi`, `V[i] = V[i]+1` (local tick).
+    /// * Before process Pi sends a message, it first executes `V[i] = V [i] + 1` (local tick),
+    ///   then it sends the message piggybacked with V.
+    /// * When process Pi receives a message piggybacked with times- tamp U , it executes
+    ///
+    ///   ```text
+    ///   ∀k ∈[1...n],V[k]=max(V[k],U[k])(merge);
+    ///   V[i] = V[i] + 1 (local tick)
+    ///   ```
+    ///
+    ///   before delivering the message.
     fn update_vector_clock(&mut self, event: &Event) {
         match event.event_type {
             EventType::Receive => {
