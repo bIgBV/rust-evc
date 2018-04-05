@@ -18,10 +18,10 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(event_type: EventType, clock: &Vec<u64>, evc: &Integer, process_id: u64) -> Event {
+    pub fn new(event_type: EventType, clock: &[u64], evc: &Integer, process_id: u64) -> Event {
         Event {
             process_id,
-            vec_clock: clock.clone(),
+            vec_clock: clock.to_owned(),
             encoded_clock: evc.clone(),
             event_type,
         }

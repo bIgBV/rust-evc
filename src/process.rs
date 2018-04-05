@@ -87,12 +87,12 @@ impl Process {
     fn generate_event(&mut self) {
         let event_choices = vec![EventType::Message, EventType::Internal];
         if let Some(event_choice) = rand::thread_rng().choose(&event_choices) {
-            match event_choice {
-                &EventType::Internal => {
+            match *event_choice {
+                EventType::Internal => {
                     let event = self.create_event(EventType::Internal);
                     self.handle_event(event)
                 }
-                &EventType::Message => {
+                EventType::Message => {
                     let event = self.create_event(EventType::Message);
                     self.handle_event(event)
                 }

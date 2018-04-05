@@ -23,7 +23,7 @@ pub fn parse_config(name: &str) -> Result<Config, Error> {
     let mut contents = String::new();
     f.read_to_string(&mut contents)?;
 
-    let config: Config = toml::from_str(&contents.as_str())?;
+    let config: Config = toml::from_str(contents.as_str())?;
 
     Ok(config)
 }
