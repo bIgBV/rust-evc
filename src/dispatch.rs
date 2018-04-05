@@ -26,7 +26,7 @@ impl Dispatch {
         process_map: ProcessMap,
         config: Arc<Config>,
     ) -> Dispatch {
-        let process_ids = process_map.keys().map(|k| k.clone()).collect();
+        let process_ids = process_map.keys().cloned().collect();
 
         Dispatch {
             receiver,
