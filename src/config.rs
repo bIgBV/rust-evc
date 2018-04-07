@@ -12,6 +12,7 @@ pub struct Config {
     pub num_processes: i64,
     pub max_bits: u32,
     pub timeout: u64,
+    pub float_precision: u32,
 }
 
 /// Simple function parse the config of the application.
@@ -30,7 +31,7 @@ pub fn parse_config(name: &str) -> Result<Config, Error> {
 
 #[test]
 fn test_parse_config() {
-    let config = match parse_config("/Users/bIgB/.config/rust-evc/config.toml") {
+    let config = match parse_config("/Users/bIgB/.config/rust-evc-log/config.toml") {
         Ok(c) => assert_eq!(c.num_processes, 5),
         Err(e) => {
             println!("Error: {}", e);

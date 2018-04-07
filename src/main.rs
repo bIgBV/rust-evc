@@ -47,10 +47,11 @@ fn run_dispatch(mut dispatch: Dispatch) {
 }
 
 fn main() {
-    let config = parse_config("/Users/bIgB/.config/rust-evc/config.toml").unwrap_or_else(|e| {
+    let config = parse_config("/Users/bIgB/.config/rust-evc-log/config.toml").unwrap_or_else(|e| {
         error!("Unable to read config");
         panic!("Error: {}", e);
     });
+    debug!("Initilizing with config: {:?}", config);
 
     simplelog::CombinedLogger::init(vec![
         simplelog::TermLogger::new(simplelog::LevelFilter::Error, simplelog::Config::default())

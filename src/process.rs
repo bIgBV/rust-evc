@@ -7,7 +7,7 @@ use std::sync::Arc;
 extern crate rand;
 extern crate rug;
 
-use self::rug::{Assign, Integer};
+use self::rug::{Assign, Float, Integer};
 use self::rand::Rng;
 
 use super::event::{Event, EventType};
@@ -19,6 +19,7 @@ pub struct Process {
     pub prime: Integer,
     pub vec_clock: Vec<u64>,
     pub evc: Integer,
+    pub log_evc: Float,
     pub receiver: Receiver<Event>,
     pub dispatch: Sender<Event>,
     config: Arc<Config>,
@@ -26,7 +27,7 @@ pub struct Process {
 
 impl Process {
     /// Instantiates a new process. The vector is initiated with the given capacity and
-    /// the local time for all other proceses set to 0.
+    /// the local time for all other process set to 0.
     pub fn new(
         id: u64,
         prime: u64,
@@ -39,6 +40,7 @@ impl Process {
             prime: Integer::from(prime),
             vec_clock: Vec::with_capacity(config.num_processes as usize),
             evc: Integer::from(1),
+            log_evc: Float::with_val(config.float_precision, 0),
             receiver,
             dispatch,
             config,
@@ -57,8 +59,8 @@ impl Process {
 
     /// The main driver of a process. It waits for a message to arrive on the
     /// channel for 500 milliseconds. If there is no message, then it will either
-    /// perform an intenral event or a send send event, this will be randomly
-    /// selected.
+    /// perform an internal event or a send send event, this will be randomly
+    /// selected
     pub fn handle_dispatch(&mut self) {
         loop {
             match self.receiver
@@ -80,7 +82,13 @@ impl Process {
 
     /// Event creator.
     fn create_event(&self, event_type: EventType) -> Event {
-        Event::new(event_type, &self.vec_clock, &self.evc, self.id)
+        Event::new(
+            event_type,
+            &self.vec_clock,
+            &self.evc,
+            &self.log_evc,
+            self.id,
+        )
     }
 
     /// Randomly generates events when a message is not received across a channel.
@@ -106,49 +114,37 @@ impl Process {
     /// Main even handler. This updates both the vector clock and the encoded clock and
     /// calls the appropriate event handler based on the event type.
     fn handle_event(&mut self, event: Event) {
+        // Update the vector clock
+        self.update_vector_clock(&event);
+
+        // update the encoded vector clock.
+        let temp = self.update_encoded_clock(&event);
+        self.evc.assign(temp);
+
+        self.log_evc = self.update_log_encoded_clock(&event);
+
         match event.event_type {
-            EventType::Internal => {
-                // Update the vector clock
-                self.update_vector_clock(&event);
-
-                // update the encoded vector clock.
-                let temp = self.update_encoded_clock(&event);
-                self.evc.assign(temp);
-                self.handle_internal(event)
-            }
-            EventType::Message => {
-                self.update_vector_clock(&event);
-
-                let temp = self.update_encoded_clock(&event);
-                self.evc.assign(temp);
-                self.handle_message()
-            }
-            EventType::Receive => {
-                self.update_vector_clock(&event);
-
-                let temp = self.update_encoded_clock(&event);
-                self.evc.assign(temp);
-
-                self.handle_receive(event)
-            }
+            EventType::Internal => self.handle_internal(event),
+            EventType::Message => self.handle_message(),
+            EventType::Receive => self.handle_receive(event),
         }
 
         debug!(
-            "p: {} Vec clock: {:?}, encoded clock: {}",
+            "p: {} Vec clock: {:?}, encoded clock: {}, log encoded clock: {}",
             self.id,
             self.vec_clock,
-            self.evc.significant_bits()
+            self.evc.significant_bits(),
+            self.log_evc
         );
     }
 
-    /// Updates the processe's encoded clock according to the following rules:
+    /// Updates the process's encoded clock according to the following rules:
     ///
     ///* Initialize ti = 1.
     ///* Before an internal event happens at process Pi ,
     ///  ti = ti ∗ pi (local tick).
     ///* Before process Pi sends a message, it  rst executes
-    ///  ti = ti ∗ pi (local tick), then it sends the message pig-
-    ///  gybacked with ti .
+    ///  ti = ti ∗ pi (local tick), then it sends the message piggybacked with ti .
     ///* When process Pi receives a message piggybacked with
     ///  timestamp s, it executes
     ///  ti =LCM(s,ti)(merge);
@@ -163,6 +159,46 @@ impl Process {
             _ => {
                 let temp = &self.evc * &self.prime;
                 Integer::from(temp)
+            }
+        }
+    }
+
+    fn update_log_encoded_clock(&self, event: &Event) -> Float {
+        match event.event_type {
+            EventType::Receive => {
+                // merge two encoded clocks
+                let log_evc_anti =
+                    Float::with_val(self.config.float_precision, self.log_evc.exp2_ref());
+                let ts_anti = Float::with_val(
+                    self.config.float_precision,
+                    event.log_encoded_clock.exp2_ref(),
+                );
+
+                let evc_anti_int = match log_evc_anti.to_integer() {
+                    Some(i) => i,
+                    None => unreachable!(),
+                };
+
+                let ts_anti_int = match ts_anti.to_integer() {
+                    Some(i) => i,
+                    None => unreachable!(),
+                };
+
+                let ts_gcd = evc_anti_int.gcd(&ts_anti_int);
+
+                let ts_gcd_fl = Float::with_val(self.config.float_precision, ts_gcd);
+
+                let temp = Float::with_val(
+                    self.config.float_precision,
+                    &event.log_encoded_clock + &self.log_evc,
+                );
+                Float::with_val(self.config.float_precision, temp - (ts_gcd_fl.log2()))
+            }
+            _ => {
+                // Tick of the clock
+                let prime_fl = Float::with_val(self.config.float_precision, &self.prime);
+                let log_prime_fl = prime_fl.log2();
+                Float::with_val(self.config.float_precision, &self.log_evc + &log_prime_fl)
             }
         }
     }
@@ -211,14 +247,13 @@ impl Process {
                 EventType::Message,
                 &self.vec_clock,
                 &self.evc,
+                &self.log_evc,
                 self.id,
             ))
             .unwrap_or_else(|e| error!("p: {}: error sending message: {}", self.id, e));
     }
 
     /// Simulating an internal process. The process sleeps for a random amount of time
-    ///
-    /// TODO: select sleep duration from a random range of values.
     fn handle_internal(&self, event: Event) {
         self.dispatch
             .send(event)

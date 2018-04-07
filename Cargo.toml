@@ -1,6 +1,6 @@
 [package]
-name = "rust-evc"
-version = "0.1.0"
+name = "rust-evc-log"
+version = "0.1.2"
 authors = ["Bhargav Voleti <bhargav.voleti93@gmail.com>"]
 
 [dependencies]

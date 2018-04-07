@@ -180,8 +180,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-evc"
-version = "0.1.0"
+name = "rust-evc-log"
+version = "0.1.2"
 dependencies = [
  "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
