@@ -141,13 +141,6 @@ impl Process {
             EventType::Receive => self.handle_receive(event),
         }
 
-        //        debug!(
-        //            "p: {} Vec clock: {:?}, encoded clock: {}, log encoded clock: {}",
-        //            self.id,
-        //            self.vec_clock,
-        //            self.evc.significant_bits(),
-        //            self.log_evc
-        //        );
     }
 
     /// Updates the process's encoded clock according to the following rules:
@@ -175,6 +168,18 @@ impl Process {
         }
     }
 
+    /// Updates the process's log encoded clock according to the following rules:
+    ///
+    /// (1) Initialize ti = 0.
+    //  (2) Before an internal event happens at process Pi ,
+    // ti = ti + log(pi ) (local tick).
+    // (3) Before process Pi sends a message, it  rst executes
+    // ti = ti + log(pi ) (local tick), then it sends the message
+    // piggybacked with ti .
+    // (4) When process Pi receives a message piggybacked with
+    // timestamp s, it executes
+    // ti = s + ti − log(GCD(log−1(s), log−1(ti ))) (merge); ti = ti + log(pi ) (local tick)
+    // before delivering the message.
     fn update_log_encoded_clock(&self, event: &Event) -> Float {
         match event.event_type {
             EventType::Receive => {
@@ -245,10 +250,6 @@ impl Process {
 
     /// Logs a receive event.
     fn handle_receive(&self, event: Event) {
-        debug!(
-            "p: {}: Received event: {:?} from {}",
-            self.id, event, event.process_id
-        );
         self.collector
             .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
@@ -264,7 +265,6 @@ impl Process {
             &self.log_evc,
             self.id,
         );
-        debug!("p: {}: Dispatching event: {:?}", self.id, event);
         self.dispatch
             .send(event.clone())
             .unwrap_or_else(|e| error!("p: {}: error sending message: {}", self.id, e));
@@ -284,7 +284,6 @@ impl Process {
             self.id,
         );
         info!("p: {}: internal event", self.id);
-        debug!("p: {}: Performing internal event: {:?}", self.id, event);
         self.collector
             .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
