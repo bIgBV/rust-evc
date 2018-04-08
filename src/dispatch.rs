@@ -8,11 +8,13 @@ extern crate rand;
 use self::rand::Rng;
 use event::{Event, EventType};
 use config::Config;
+use collector::Message;
 
 type ProcessMap = HashMap<u64, Sender<Event>>;
 
 pub struct Dispatch {
     receiver: Receiver<Event>,
+    collector: Sender<Message>,
     process_map: ProcessMap,
     process_ids: Vec<u64>,
     config: Arc<Config>,
@@ -21,6 +23,7 @@ pub struct Dispatch {
 impl Dispatch {
     pub fn new(
         receiver: Receiver<Event>,
+        collector: Sender<Message>,
         process_map: ProcessMap,
         config: Arc<Config>,
     ) -> Dispatch {
@@ -28,6 +31,7 @@ impl Dispatch {
 
         Dispatch {
             receiver,
+            collector,
             process_map,
             process_ids,
             config,
@@ -44,6 +48,9 @@ impl Dispatch {
         for event in self.receiver.iter() {
             if event.encoded_clock.significant_bits() >= self.config.max_bits {
                 debug!("Closing simulation.");
+                self.collector
+                    .send(Message::End)
+                    .unwrap_or_else(|e| error!("Error sending message to collector: {}", e));
                 break;
             }
 

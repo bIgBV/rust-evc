@@ -12,6 +12,7 @@ use self::rand::Rng;
 
 use config::Config;
 use event::{next_event_id, Event, EventType};
+use collector::Message;
 
 #[derive(Debug)]
 pub struct Process {
@@ -22,7 +23,7 @@ pub struct Process {
     pub log_evc: Float,
     pub receiver: Receiver<Event>,
     pub dispatch: Sender<Event>,
-    pub collector: Sender<Event>,
+    pub collector: Sender<Message>,
     config: Arc<Config>,
 }
 
@@ -34,7 +35,7 @@ impl Process {
         prime: u64,
         receiver: Receiver<Event>,
         dispatch: Sender<Event>,
-        collector: Sender<Event>,
+        collector: Sender<Message>,
         config: Arc<Config>,
     ) -> Process {
         let mut p = Process {
@@ -249,13 +250,13 @@ impl Process {
             self.id, event, event.process_id
         );
         self.collector
-            .send(Message(Event))
+            .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
     }
 
     /// Sends a message to the dispatcher to be sent to a random process.
     fn handle_message(&self) {
-        let message = Event::new(
+        let event = Event::new(
             EventType::Send,
             next_event_id(),
             &self.vec_clock,
@@ -263,18 +264,18 @@ impl Process {
             &self.log_evc,
             self.id,
         );
-        debug!("p: {}: Dispatching event: {:?}", self.id, message);
+        debug!("p: {}: Dispatching event: {:?}", self.id, event);
         self.dispatch
-            .send(message)
+            .send(event.clone())
             .unwrap_or_else(|e| error!("p: {}: error sending message: {}", self.id, e));
         self.collector
-            .send(event)
+            .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
     }
 
     /// Simulating an internal process. The process sleeps for a random amount of time
     fn handle_internal(&self) {
-        let message = Event::new(
+        let event = Event::new(
             EventType::Internal,
             next_event_id(),
             &self.vec_clock,
@@ -283,9 +284,9 @@ impl Process {
             self.id,
         );
         info!("p: {}: internal event", self.id);
-        debug!("p: {}: Performing internal event: {:?}", self.id, message);
+        debug!("p: {}: Performing internal event: {:?}", self.id, event);
         self.collector
-            .send(event)
+            .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
         thread::sleep(Duration::from_millis(self.config.timeout));
     }

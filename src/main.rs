@@ -36,7 +36,7 @@ use config::parse_config;
 use utils::nth_prime;
 use process::Process;
 use dispatch::Dispatch;
-use collector::Collector;
+use collector::{Collector, Message};
 
 fn run_thread(mut process: Process) {
     info!("Thread: {}, prime: {}", process.id, process.prime);
@@ -48,7 +48,7 @@ fn run_dispatch(mut dispatch: Dispatch) {
     dispatch.handle_dispatch();
 }
 
-fn run_collector(mut collector: Collector) {
+fn run_collector(collector: Collector) {
     info!("Starting collector");
     collector.handle_dispatch();
 }
@@ -58,7 +58,7 @@ fn main() {
         error!("Unable to read config");
         panic!("Error: {}", e);
     });
-    debug!("Initilizing with config: {:?}", config);
+    debug!("Initializing with config: {:?}", config);
 
     simplelog::CombinedLogger::init(vec![
         simplelog::TermLogger::new(simplelog::LevelFilter::Info, simplelog::Config::default())
@@ -76,7 +76,7 @@ fn main() {
     let mut process_map = HashMap::new();
 
     let (dispatch_sender, receiver) = channel();
-    let (collector_sender, collector_receiver) = channel();
+    let (collector_sender, collector_receiver) = channel::<Message>();
 
     let shared_config = Arc::new(config);
 
@@ -96,7 +96,12 @@ fn main() {
         thread_handles.push(spawn(move || run_thread(process)));
     }
 
-    let dispatch_process = Dispatch::new(receiver, process_map, shared_config.clone());
+    let dispatch_process = Dispatch::new(
+        receiver,
+        collector_sender.clone(),
+        process_map,
+        shared_config.clone(),
+    );
     let collector_process = Collector::new(collector_receiver);
 
     thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
