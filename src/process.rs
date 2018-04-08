@@ -10,8 +10,8 @@ extern crate rug;
 use self::rug::{Assign, Float, Integer};
 use self::rand::Rng;
 
-use super::event::{Event, EventType};
-use super::config::Config;
+use config::Config;
+use event::{next_event_id, Event, EventType};
 
 #[derive(Debug)]
 pub struct Process {
@@ -22,6 +22,7 @@ pub struct Process {
     pub log_evc: Float,
     pub receiver: Receiver<Event>,
     pub dispatch: Sender<Event>,
+    pub collector: Sender<Event>,
     config: Arc<Config>,
 }
 
@@ -33,6 +34,7 @@ impl Process {
         prime: u64,
         receiver: Receiver<Event>,
         dispatch: Sender<Event>,
+        collector: Sender<Event>,
         config: Arc<Config>,
     ) -> Process {
         let mut p = Process {
@@ -43,6 +45,7 @@ impl Process {
             log_evc: Float::with_val(config.float_precision, 0),
             receiver,
             dispatch,
+            collector,
             config,
         };
 
@@ -66,9 +69,16 @@ impl Process {
             match self.receiver
                 .recv_timeout(Duration::from_millis(self.config.timeout))
             {
-                Ok(mut event) => {
-                    event.event_type = EventType::Receive;
-                    self.handle_event(event)
+                Ok(event) => {
+                    let receive_event = Event::new(
+                        EventType::Receive,
+                        next_event_id(),
+                        &event.vec_clock,
+                        &event.encoded_clock,
+                        &event.log_encoded_clock,
+                        event.process_id,
+                    );
+                    self.handle_event(receive_event)
                 }
                 Err(e) => match e {
                     RecvTimeoutError::Timeout => self.generate_event(),
@@ -84,6 +94,7 @@ impl Process {
     fn create_event(&self, event_type: EventType) -> Event {
         Event::new(
             event_type,
+            next_event_id(),
             &self.vec_clock,
             &self.evc,
             &self.log_evc,
@@ -93,15 +104,15 @@ impl Process {
 
     /// Randomly generates events when a message is not received across a channel.
     fn generate_event(&mut self) {
-        let event_choices = vec![EventType::Message, EventType::Internal];
+        let event_choices = vec![EventType::Send, EventType::Internal];
         if let Some(event_choice) = rand::thread_rng().choose(&event_choices) {
             match *event_choice {
                 EventType::Internal => {
                     let event = self.create_event(EventType::Internal);
                     self.handle_event(event)
                 }
-                EventType::Message => {
-                    let event = self.create_event(EventType::Message);
+                EventType::Send => {
+                    let event = self.create_event(EventType::Send);
                     self.handle_event(event)
                 }
                 _ => info!("Just to make the type checker happy"),
@@ -124,18 +135,18 @@ impl Process {
         self.log_evc = self.update_log_encoded_clock(&event);
 
         match event.event_type {
-            EventType::Internal => self.handle_internal(event),
-            EventType::Message => self.handle_message(),
+            EventType::Internal => self.handle_internal(),
+            EventType::Send => self.handle_message(),
             EventType::Receive => self.handle_receive(event),
         }
 
-        debug!(
-            "p: {} Vec clock: {:?}, encoded clock: {}, log encoded clock: {}",
-            self.id,
-            self.vec_clock,
-            self.evc.significant_bits(),
-            self.log_evc
-        );
+        //        debug!(
+        //            "p: {} Vec clock: {:?}, encoded clock: {}, log encoded clock: {}",
+        //            self.id,
+        //            self.vec_clock,
+        //            self.evc.significant_bits(),
+        //            self.log_evc
+        //        );
     }
 
     /// Updates the process's encoded clock according to the following rules:
@@ -233,32 +244,49 @@ impl Process {
 
     /// Logs a receive event.
     fn handle_receive(&self, event: Event) {
-        info!("p: {}: Received event from {}", self.id, event.process_id);
-        self.dispatch
-            .send(event)
-            .unwrap_or_else(|e| error!("p: {}: error dispatching event: {}", self.id, e));
+        debug!(
+            "p: {}: Received event: {:?} from {}",
+            self.id, event, event.process_id
+        );
+        self.collector
+            .send(Message(Event))
+            .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
     }
 
     /// Sends a message to the dispatcher to be sent to a random process.
     fn handle_message(&self) {
-        info!("p: {}: Dispatching message", self.id);
+        let message = Event::new(
+            EventType::Send,
+            next_event_id(),
+            &self.vec_clock,
+            &self.evc,
+            &self.log_evc,
+            self.id,
+        );
+        debug!("p: {}: Dispatching event: {:?}", self.id, message);
         self.dispatch
-            .send(Event::new(
-                EventType::Message,
-                &self.vec_clock,
-                &self.evc,
-                &self.log_evc,
-                self.id,
-            ))
+            .send(message)
             .unwrap_or_else(|e| error!("p: {}: error sending message: {}", self.id, e));
+        self.collector
+            .send(event)
+            .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
     }
 
     /// Simulating an internal process. The process sleeps for a random amount of time
-    fn handle_internal(&self, event: Event) {
-        self.dispatch
+    fn handle_internal(&self) {
+        let message = Event::new(
+            EventType::Internal,
+            next_event_id(),
+            &self.vec_clock,
+            &self.evc,
+            &self.log_evc,
+            self.id,
+        );
+        info!("p: {}: internal event", self.id);
+        debug!("p: {}: Performing internal event: {:?}", self.id, message);
+        self.collector
             .send(event)
-            .unwrap_or_else(|e| error!("p: {}: error dispatching event: {}", self.id, e));
-        info!("p: {}: Performing intenral event", self.id);
+            .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));
         thread::sleep(Duration::from_millis(self.config.timeout));
     }
 }

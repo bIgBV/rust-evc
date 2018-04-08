@@ -6,9 +6,8 @@ use std::sync::Arc;
 extern crate rand;
 
 use self::rand::Rng;
-
-use super::event::{Event, EventType};
-use super::config::Config;
+use event::{Event, EventType};
+use config::Config;
 
 type ProcessMap = HashMap<u64, Sender<Event>>;
 
@@ -16,7 +15,6 @@ pub struct Dispatch {
     receiver: Receiver<Event>,
     process_map: ProcessMap,
     process_ids: Vec<u64>,
-    counter: u64,
     config: Arc<Config>,
 }
 
@@ -32,7 +30,6 @@ impl Dispatch {
             receiver,
             process_map,
             process_ids,
-            counter: 0,
             config,
         }
     }
@@ -46,12 +43,11 @@ impl Dispatch {
     pub fn handle_dispatch(&mut self) {
         for event in self.receiver.iter() {
             if event.encoded_clock.significant_bits() >= self.config.max_bits {
-                debug!("Closing simulation. Events: {}", self.counter);
+                debug!("Closing simulation.");
                 break;
             }
-            self.counter += 1;
 
-            if event.event_type == EventType::Message {
+            if event.event_type == EventType::Send {
                 let mut sending_process = 0;
                 if let Some(position) = self.process_ids.iter().position(|x| *x == event.process_id)
                 {
@@ -68,7 +64,7 @@ impl Dispatch {
                         );
                         sender
                             .send(event)
-                            .unwrap_or_else(|e| error!("Error dispatcing: {}", e));
+                            .unwrap_or_else(|e| error!("Error dispatching: {}", e));
                     }
                 } else {
                     error!("Unable to select thread to dispatch to");

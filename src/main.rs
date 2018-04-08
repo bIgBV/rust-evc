@@ -30,11 +30,13 @@ mod config;
 mod event;
 mod process;
 mod dispatch;
+mod collector;
 
 use config::parse_config;
 use utils::nth_prime;
 use process::Process;
 use dispatch::Dispatch;
+use collector::Collector;
 
 fn run_thread(mut process: Process) {
     info!("Thread: {}, prime: {}", process.id, process.prime);
@@ -46,6 +48,11 @@ fn run_dispatch(mut dispatch: Dispatch) {
     dispatch.handle_dispatch();
 }
 
+fn run_collector(mut collector: Collector) {
+    info!("Starting collector");
+    collector.handle_dispatch();
+}
+
 fn main() {
     let config = parse_config("/Users/bIgB/.config/rust-evc-log/config.toml").unwrap_or_else(|e| {
         error!("Unable to read config");
@@ -54,7 +61,7 @@ fn main() {
     debug!("Initilizing with config: {:?}", config);
 
     simplelog::CombinedLogger::init(vec![
-        simplelog::TermLogger::new(simplelog::LevelFilter::Error, simplelog::Config::default())
+        simplelog::TermLogger::new(simplelog::LevelFilter::Info, simplelog::Config::default())
             .expect("Failed to create term logger"),
         simplelog::WriteLogger::new(
             simplelog::LevelFilter::Debug,
@@ -69,6 +76,7 @@ fn main() {
     let mut process_map = HashMap::new();
 
     let (dispatch_sender, receiver) = channel();
+    let (collector_sender, collector_receiver) = channel();
 
     let shared_config = Arc::new(config);
 
@@ -81,6 +89,7 @@ fn main() {
             nth_prime(i as u64),
             receiver,
             dispatch_sender.clone(),
+            collector_sender.clone(),
             shared_config.clone(),
         );
 
@@ -88,8 +97,10 @@ fn main() {
     }
 
     let dispatch_process = Dispatch::new(receiver, process_map, shared_config.clone());
+    let collector_process = Collector::new(collector_receiver);
 
     thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
+    thread_handles.push(spawn(move || run_collector(collector_process)));
 
     for handle in thread_handles {
         handle.join().unwrap();
