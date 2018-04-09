@@ -44,7 +44,7 @@ impl Dispatch {
     /// If the significant bits of any encoded vector clock is greater than the
     /// config.max_bits, then it breaks out of the loop, which triggers drops all
     /// the senders of all the processes, signalling shutdown.
-    pub fn handle_dispatch(&mut self) {
+    pub fn handle_dispatch(mut self) {
         for event in self.receiver.iter() {
             if event.encoded_clock.significant_bits() >= self.config.max_bits {
                 debug!("Closing simulation.");

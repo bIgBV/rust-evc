@@ -65,7 +65,7 @@ impl Process {
     /// channel for 500 milliseconds. If there is no message, then it will either
     /// perform an internal event or a send send event, this will be randomly
     /// selected
-    pub fn handle_dispatch(&mut self) {
+    pub fn handle_dispatch(mut self) {
         loop {
             match self.receiver
                 .recv_timeout(Duration::from_millis(self.config.timeout))
@@ -123,7 +123,7 @@ impl Process {
         }
     }
 
-    /// Main even handler. This updates both the vector clock and the encoded clock and
+    /// Main event handler. This updates both the vector clock and the encoded clock and
     /// calls the appropriate event handler based on the event type.
     fn handle_event(&mut self, event: Event) {
         // Update the vector clock

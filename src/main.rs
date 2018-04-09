@@ -38,12 +38,12 @@ use process::Process;
 use dispatch::Dispatch;
 use collector::{Collector, Message};
 
-fn run_thread(mut process: Process) {
+fn run_thread(process: Process) {
     info!("Thread: {}, prime: {}", process.id, process.prime);
     process.handle_dispatch()
 }
 
-fn run_dispatch(mut dispatch: Dispatch) {
+fn run_dispatch(dispatch: Dispatch) {
     info!("Starting dispatcher");
     dispatch.handle_dispatch();
 }
