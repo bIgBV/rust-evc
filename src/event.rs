@@ -3,6 +3,9 @@ extern crate rug;
 use self::rug::{Float, Integer};
 
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::cmp;
+
+use collector::{Pair, ToPair};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EventType {
@@ -37,6 +40,15 @@ impl Event {
             encoded_clock: evc.clone(),
             log_encoded_clock: log_evc.clone(),
             event_type,
+        }
+    }
+}
+
+impl ToPair for Event {
+    fn make_pair(self, receiver: Event) -> Pair {
+        Pair {
+            send: self,
+            receive: receiver,
         }
     }
 }

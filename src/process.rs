@@ -12,7 +12,7 @@ use self::rand::Rng;
 
 use config::Config;
 use event::{next_event_id, Event, EventType};
-use collector::Message;
+use collector::{Message, ToPair};
 
 #[derive(Debug)]
 pub struct Process {
@@ -70,20 +70,19 @@ impl Process {
             match self.receiver
                 .recv_timeout(Duration::from_millis(self.config.timeout))
             {
-                Ok(event) => {
-                    let receive_event = Event::new(
-                        EventType::Receive,
-                        next_event_id(),
-                        &event.vec_clock,
-                        &event.encoded_clock,
-                        &event.log_encoded_clock,
-                        event.process_id,
-                    );
-                    self.handle_event(receive_event)
+                Ok(mut event) => {
+                    // hack becuase this event is the send event in the pari, but needs to be processed via merge
+                    event.event_type = EventType::Receive;
+                    self.handle_event(event)
                 }
                 Err(e) => match e {
                     RecvTimeoutError::Timeout => self.generate_event(),
-                    RecvTimeoutError::Disconnected => break, // Break out of loop, effectively shutting down thread.
+                    RecvTimeoutError::Disconnected => {
+                        self.collector
+                            .send(Message::End)
+                            .unwrap_or_else(|e| error!("Unable to send end to collector: {}", e));
+                        break;
+                    } // Break out of loop, effectively shutting down thread.
                 },
             }
         }
@@ -133,14 +132,13 @@ impl Process {
         let temp = self.update_encoded_clock(&event);
         self.evc.assign(temp);
 
-        self.log_evc = self.update_log_encoded_clock(&event);
+        // self.log_evc = self.update_log_encoded_clock(&event);
 
         match event.event_type {
             EventType::Internal => self.handle_internal(),
             EventType::Send => self.handle_message(),
             EventType::Receive => self.handle_receive(event),
         }
-
     }
 
     /// Updates the process's encoded clock according to the following rules:
@@ -171,15 +169,15 @@ impl Process {
     /// Updates the process's log encoded clock according to the following rules:
     ///
     /// (1) Initialize ti = 0.
-    //  (2) Before an internal event happens at process Pi ,
-    // ti = ti + log(pi ) (local tick).
-    // (3) Before process Pi sends a message, it  rst executes
-    // ti = ti + log(pi ) (local tick), then it sends the message
-    // piggybacked with ti .
-    // (4) When process Pi receives a message piggybacked with
-    // timestamp s, it executes
-    // ti = s + ti − log(GCD(log−1(s), log−1(ti ))) (merge); ti = ti + log(pi ) (local tick)
-    // before delivering the message.
+    ///  (2) Before an internal event happens at process Pi ,
+    /// ti = ti + log(pi ) (local tick).
+    /// (3) Before process Pi sends a message, it  rst executes
+    /// ti = ti + log(pi ) (local tick), then it sends the message
+    /// piggybacked with ti .
+    /// (4) When process Pi receives a message piggybacked with
+    /// timestamp s, it executes
+    /// ti = s + ti − log(GCD(log−1(s), log−1(ti ))) (merge); ti = ti + log(pi ) (local tick)
+    /// before delivering the message.
     fn update_log_encoded_clock(&self, event: &Event) -> Float {
         match event.event_type {
             EventType::Receive => {
@@ -249,7 +247,21 @@ impl Process {
     }
 
     /// Logs a receive event.
-    fn handle_receive(&self, event: Event) {
+    fn handle_receive(&self, mut event: Event) {
+        event.event_type = EventType::Send;
+        let receive_event = Event::new(
+            EventType::Receive,
+            next_event_id(),
+            &self.vec_clock,
+            &self.evc,
+            &self.log_evc,
+            self.id,
+        );
+        self.collector
+            .send(Message::Pair(
+                event.clone().make_pair(receive_event.clone()),
+            ))
+            .unwrap_or_else(|e| error!("p: {} Unable to send pair to collector: {}", self.id, e));
         self.collector
             .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));

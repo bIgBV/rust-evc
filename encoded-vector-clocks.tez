@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Implementation study" />
+  <title>Encoded Vector Clocks</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header>
+<h1 class="title">Encoded Vector Clocks</h1>
+<p class="author">Implementation study</p>
+<p class="date">Author Bhargav Voleti</p>
+</header>
+<h1 id="abstract">Abstract</h1>
+<p>Vector clocks are used in for keeping track of time in a distributed system. Since a global physical clock is not possible, logical clocks are used instead. Vector clocks are a form of logical clocks. The issue with vector clocks is the size of the payload being transmitted between nodes. Encoded vector clocks are an optimization wherein an encoded version of the vector clock is sent as a part of the payload. This paper talks about the implementation of a hypothetical system and shows the results of using vector clocks to transmit information regarding time in a distributed system.</p>
+<h1 id="architecture">Architecture</h1>
+<p>I chose Rust as the language to implement this system. According to its <a href="https://www.rust-lang.org/en-US/">website</a> the Rust programming language provides the following guarantees:</p>
+<blockquote>
+<p>A systems programming language that runs blazingly fast prevents segfaults, and guarantees thread safety.</p>
+</blockquote>
+<p>This means a whole class of bugs related to multi-threaded programs are eliminated by the compiler. It also encourages message passing as a way of sharing data between threads and provides thread-safe data structures to share state between threads which is also memory safe, the safety of which is guaranteed by the compiler. All of this means that there are no data races in the system and the programmer is very productive in building a multi-threaded system. I personally found the notion of “if it compiles, it runs” very refreshing.</p>
+<p>The system is built as an asynchronous message passing system where each thread represents a process in a distributed system. The number of threads can be configured by a configuration file. This configuration file can be used to configure a few other parameters:</p>
+<ul>
+<li><code>num_processes</code>: Number of processes in the system</li>
+<li><code>max_bits</code>: Maximum size in bits of the encoded vector clock.</li>
+<li><code>timeout</code>: Timeouts for the various channels used for message passing</li>
+<li><code>float_precision</code>: Size of mantissa used for arbitrary precision floating values</li>
+<li><code>max_events</code>: Maximum number of events allowed.</li>
+</ul>
+<p>Using these 5 values we can control different parameters of the simulation, thus gaining an understanding of the system under different conditions.</p>
+<p>The system consists of three main types of processes</p>
+<ol type="1">
+<li>Processes</li>
+<li>Dispatcher</li>
+<li>Collector</li>
+</ol>
+<p>Infomation is shared in the system using message passing. Messages are passed on FIFO channels which are thread safe and act as queues for the processes.</p>
+<h2 id="process">Process</h2>
+<p>A process is a type of thread which simulates a process in the distributed system. It keeps track of its vector clock and has a handle for the receiving end of a channel on which it receives Send messages from other processes. It also has a handle for the sending end of a channel to the collector. This is so that events can be sent to the collector to be processed.</p>
+<p>The Process is responsible for maintaining the following clocks:</p>
+<ul>
+<li>The vector clock</li>
+<li>The Encoded vector clock</li>
+</ul>
+<p>The process updates these clocks as a part of the steps in its operating loop. It first waits for <code>timeout</code> number of milliseconds on the receiving channel for any new send messages dispatched to it. If a timeout occurs, it then randomly selects between an Internal event or a Send event. The probability of this choice is hardcoded but can be changed pretty quickly between different runs of the experiments. For all experiments except otherwise specified the probability for an Internal vs Send event is 50:50. Once an event is generated, it then is handled. The process has a central event handler which updates the clocks according to the type of event which then dispatches to the appropriate event handler based on the type of the event to be acted upon.</p>
+<p>If it is an Internal event, the thread sleeps for <code>timeout</code> milliseconds as a way of simulating some internal event. Once the thread wakes up, it goes back to waiting on the receiver.</p>
+<p>If it a Send event, the thread dispatches the event to the Dispatcher thread to be sent to a random process and goes back to waiting on the receiver.</p>
+<p>If the thread receives a message within <code>timeout</code> milliseconds, it handles the message received and generates a corresponding receive event which is then sent to the collector to be recorded.</p>
+<p>The vector clock and the Encoded vector clocks are updated according to their rules when handling the different events generated by the system.</p>
+<h2 id="dispatcher">Dispatcher</h2>
+<p>These threads simulate the asynchronous message passing layer in the system. All processes when generating a Send event and sending a message to another process actually send the message to the dispatcher thread. This is because the number of channels required would be exponential with relation to the number of the processes if all processes directly communicated with all other processes. Having a single dispatcher thread reduces the number of channels down to a linear scale, that is the number of channels equals the number of processes in the system.</p>
+<p>Since we are simulating a distributed system, we don’t really care about which process the event is being dispatched to, as long as it is not being dispatched to the process that first created it. Therefore, the dispatcher when selecting a random process to dispatch an event to considers this rule.</p>
+<p>We also use the destruction of the sending end of all channels held by processes as a signal that the simulation has ended. This means the dispatcher is where the end condition is monitored for, and when the dispatcher thread exits, the receiving ends of all the channels for the processes in the system have their destructors called. This signals the end of the simulation to all the threads in the system who exit.</p>
+<p>Before the dispatcher thread exits, it sends a special End message to the collector thread to signal the end of the simulation. The collector then can start processing all the events it collected.</p>
+<h2 id="collector">Collector</h2>
+<p>The collector thread is responsible for collecting all the events sent from the processes and once it gets the signal for the end of the simulation, processing all the events. The messages sent to the collector are of a different type called Messages. This is so that they can be differentiated from the events also being passed between the different threads in the system.</p>
+<p>Using Rust’s enums, a form of <em>algebraic data types</em>, we can send a message of the type Data which contains the event as the value of the type, or we can send a message of type End which signals the end. Depending on the type of the message received the collector stores events in the appropriate data structures which would make for easier processing of the data.</p>
+<p>A shard config object is also a part of the collector, which is used to track the number of End messages to be received to signal the end of the simulation. This number is always <code>num_processes + 1</code> since all the simulation is over after all the processes and the dispatcher thread have exited.</p>
+<p>The collector all logs various information as the simulation is being run, such as the size of the encoded vector clock vs the total number of events at a given instant. It also logs the results of processing the events after the operation has been performed.</p>
+<h1 id="gathering-data">Gathering data</h1>
+<p>All events are logged and sent to the collector to be processed. The system uses different levels of logging as a way of filtering out data. There are two different loggers configured at different levels for this purpose. A file logger handles all logs over the log level Error and a terminal logger handles all logging logs from the log level Info. This is to separate data from general system information.</p>
+<p>The terminal logger is used to monitor the general state of the system during runs and to spot any issues with the current running simulation. The file logger is used to gather information to be processed and plotted out.</p>
+<p>Thus using logging gives us a simple, fast and efficient way to filter data to the appropriate places.</p>
+<p>The data is taken from the log file, cleaned and converted to CSV to be further processed by a python script. The python script also uses Matplotlib to plot the data in the appropriate graph.</p>
+<h1 id="findings">Findings</h1>
+<p>All the following graphs were plotted with the mean of the data collected from ten individual runs.</p>
+<h2 id="events-vs-number-of-processes">Events vs number of processes</h2>
+<p><img src="num-processes-vs-events.png" title="Events vs number of processes" /></p>
+<p>As it can be seen, the relationship between the number of processes and the total number of system events is very linear. As the number of processes in the system grows, the number of events grow with it. This is to be expected since the number of send vs internal events per process stays at the same value for a given <code>max_bits</code>(capped to <span class="math inline">32 * <em>n</em></span>) size of the encoded vector clock.</p>
+<h2 id="size-of-evc-vs-number-of-processes">Size of EVC vs number of processes</h2>
+<p>This data was gathered for a various number of processes, once the size of the EVC hit <span class="math inline">32 * <em>n</em><em>u</em><em>m</em><sub><em>p</em></sub><em>r</em><em>o</em><em>c</em><em>e</em><em>s</em><em>s</em><em>e</em><em>s</em></span> the simulation stopped.</p>
+<h3 id="processes">10 processes</h3>
+<p><img src="size-num-n-10.png" title="Number of processes = 10" /><br />
+Simulation stops when size of evc becomes 320 bits.</p>
+<h3 id="processes-1">30 processes</h3>
+<p><img src="size-vs-events-n-30.png" title="Number of processes = 30" /><br />
+Simulation stops when size of evc becomes 960 bits.</p>
+<h3 id="processes-2">60 processes</h3>
+<p><img src="size-vs-events-n-60.png" title="Number of processes = 60" /><br />
+Simulation stops when size of evc becomes 1920 bits.</p>
+<h3 id="processes-3">100 processes</h3>
+<p><img src="size-vs-events-n-100.png" title="Number of processes = 100" alt="Size of EVC vs number of processes" /><br />
+The simulation stops when the size of EVC becomes 3200 bits.</p>
+<p>As we can see, as the number of events in the system increases, the size of the EVC increases exponentially. In a real-world system, this would be problematic since this would mean each process’s memory would see unbounded growth. To negate this, the system can be reset after the EVC hits a certain size. at 3200 bits and 100 processes, on my machine, I saw the memory consumption of my application rise up to 80 MB. Therefore depending on the amount of memory available on the machine, the correct threshold for resetting the logical clocks in the system can be evaluated.</p>
+<h2 id="false-negatives-and-false-positives-with-logarithms">False negatives and false positives with Logarithms</h2>
+<p>One way to put a bound on the size of the Encoded Vector Clock would be to use its logarithm instead of the encoded clock itself. The Log encoded vector clock can be hooked into the operational loop of the process without a lot of changes and the rules for updating the log clock are pretty straightforward.</p>
+<p>The issue with Log clocks is the precision lost during the conversion between arbitrary precision Integer types and Floating point types. This conversion is required because arbitrary precision Integer types do not have a Logarithm method on them. While the Floating point type do not have numerical methods such as finding the greatest common divisor and the least common multiple, thus requiring the conversion between the two types to perform the merge operation. This leads to a lot of precion being lost which subsequently leads to a very high number of false negative causalities between different events in the system.</p>
+<p>As of this implementation, the most stable and mature libraries for arbitrary precision operations are GMP (GNU Multiprecision Arithmetic Library) and MPFR(GNU Multiple Precision Floating-Point Reliably). While these libraries are written in C, various languages have bindings for them and the issues stated in the previous paragraph exist for these libraries as well.</p>
+<p>The following results are obtained after the post processnig of all the events. The Log encoded EVC is derived from the Envoded vector clock stored as a part of the events and compared.</p>
+<h3 id="false-negatives-send-to-internal-events-6040">False negatives, Send to Internal events: 60:40</h3>
+<p><img src="percent-false-negatives-final.png" title="Percentage False negatives" /></p>
+<h3 id="false-positives-send-to-internal-events-6040">False positives, Send to Internal events: 60:40</h3>
+<p><img src="percent-false-positives-final.png" title="Percentage False negatives" /></p>
+<p>The ratio of Send to Internal events was chosen to be representative values which could be seen in an application implementing a distributed algorithm. In such algorithms, the number of communication events are higher than the number of internal events.</p>
+<p>The data for false positives when tabulated can be seen in the following table</p>
+<table>
+<thead>
+<tr class="header">
+<th>Processes</th>
+<th style="text-align: right;">Precision</th>
+<th style="text-align: center;">Values</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>20</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: center;">0.31665 0.30758 0.28719 0.33138 0.31444 0.31542 0.30332 0.31548 0.30997 0.31665</td>
+</tr>
+<tr class="even">
+<td>20</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: center;">0.44953 0.45569 0.41694 0.45402 0.43961 0.43111 0.42883 0.42387 0.45154 0.45206</td>
+</tr>
+<tr class="odd">
+<td>20</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: center;">0.79339 0.86010 0.76939 0.77843 0.74880 0.83137 0.77831 0.81601 0.79816 0.73537</td>
+</tr>
+<tr class="even">
+<td>20</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: center;">1.97964 1.98047 2.12512 1.94411 2.05359 2.05424 1.95456 1.97545 2.04732 1.95365</td>
+</tr>
+<tr class="odd">
+<td>20</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: center;">7.25771 7.03398 6.97330 6.67392 7.32091 6.44801 6.90686 7.13905 6.62202 6.56266</td>
+</tr>
+<tr class="even">
+<td>20</td>
+<td style="text-align: right;">1024</td>
+<td style="text-align: center;">23.18612 22.28660 23.17450 23.07309 23.72473 23.00904 23.81090 23.52973 23.80274 23.31090</td>
+</tr>
+<tr class="odd">
+<td>30</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: center;">0.28379 0.27285 0.30916 0.28091 0.28761 0.29666 0.28300 0.27216 0.27739 0.29040</td>
+</tr>
+<tr class="even">
+<td>30</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: center;">0.40642 0.40290 0.41568 0.44268 0.37265 0.40533 0.41893 0.41246 0.39222 0.38170</td>
+</tr>
+<tr class="odd">
+<td>30</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: center;">0.61890 0.66011 0.59399 0.63966 0.63393 0.64288 0.62241 0.55565 0.61571 0.62766</td>
+</tr>
+<tr class="even">
+<td>30</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: center;">1.20158 1.12940 1.36689 1.20082 1.19002 1.22598 1.03244 1.11866 1.14618 1.27355</td>
+</tr>
+<tr class="odd">
+<td>30</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: center;">2.77064 2.87666 3.02917 2.98625 3.13588 2.79424 3.08629 3.22801 3.13916 3.14108</td>
+</tr>
+<tr class="even">
+<td>30</td>
+<td style="text-align: right;">1024</td>
+<td style="text-align: center;">11.20100 11.20489 11.10317 11.36577 10.96241 11.34973 10.29351 10.32599 10.95683 11.53487</td>
+</tr>
+<tr class="odd">
+<td>40</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: center;">0.30286 0.27427 0.27664 0.28613 0.27312 0.26441 0.29427 0.24481 0.27627 0.26339</td>
+</tr>
+<tr class="even">
+<td>40</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: center;">0.38625 0.38579 0.38094 0.36683 0.35557 0.44276 0.37033 0.35661 0.36289 0.36834</td>
+</tr>
+<tr class="odd">
+<td>40</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: center;">0.55462 0.66420 0.64978 0.57506 0.57161 0.58147 0.58840 0.51038 0.58256 0.54533</td>
+</tr>
+<tr class="even">
+<td>40</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: center;">1.08502 1.17508 1.14674 1.07074 0.99548 1.05416 1.10490 1.08530 1.06174 1.18297</td>
+</tr>
+<tr class="odd">
+<td>40</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: center;">2.61473 2.27032 2.49205 2.18779 2.53600 2.20652 2.49827 2.46028 2.20632 2.26336</td>
+</tr>
+<tr class="even">
+<td>40</td>
+<td style="text-align: right;">1024</td>
+<td style="text-align: center;">7.19037 6.94396 6.08392 6.53027 6.00166 6.58373 6.75538 6.55808 7.30790 6.34314</td>
+</tr>
+<tr class="odd">
+<td>50</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: center;">0.27101 0.26983 0.27837 0.27115 0.25438 0.26841 0.27315 0.27527 0.28145 0.26491</td>
+</tr>
+<tr class="even">
+<td>50</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: center;">0.40471 0.38140 0.40085 0.33570 0.37286 0.38317 0.36825 0.36961 0.40718 0.38353</td>
+</tr>
+<tr class="odd">
+<td>50</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: center;">0.66467 0.62601 0.57133 0.60300 0.55951 0.56010 0.65993 0.63768 0.56762 0.57213</td>
+</tr>
+<tr class="even">
+<td>50</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: center;">1.03608 1.01742 1.02343 0.95972 0.96506 1.05243 1.04639 0.93893 1.10869 1.63819</td>
+</tr>
+<tr class="odd">
+<td>50</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: center;">2.27650 1.93359 2.24797 2.16585 2.11063 2.35157 1.99045 1.99210 2.13128 2.15901</td>
+</tr>
+<tr class="even">
+<td>50</td>
+<td style="text-align: right;">1024</td>
+<td style="text-align: center;">5.05560 4.86055 5.55859 5.62966 5.11641 5.43125 4.84803 5.22132 5.55859 5.62966</td>
+</tr>
+<tr class="odd">
+<td>60</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: center;">0.27552 0.28610 0.26558 0.27609 0.29946 0.27163 0.26634 0.26975 0.29223 0.27328</td>
+</tr>
+<tr class="even">
+<td>60</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: center;">0.39934 0.40590 0.38240 0.38059 0.40750 0.39952 0.38016 0.39654 0.40195 0.40440</td>
+</tr>
+<tr class="odd">
+<td>60</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: center;">0.58355 0.61163 0.57379 0.58934 0.61180 0.63735 0.64056 0.61441 0.64038 0.61962</td>
+</tr>
+<tr class="even">
+<td>60</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: center;">1.09961 1.09455 1.19368 1.04881 1.12992 1.11363 1.13684 1.17967 1.05420 0.98671</td>
+</tr>
+<tr class="odd">
+<td>60</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: center;">2.27799 1.91919 1.95493 2.07210 2.14393 2.07478 2.30369 2.25949 2.17937 2.30274</td>
+</tr>
+<tr class="even">
+<td>60</td>
+<td style="text-align: right;">1024</td>
+<td style="text-align: center;">4.97890 4.76711 5.26248 5.12480 4.96600 4.60927 4.81423 5.53426 5.07870 4.79826</td>
+</tr>
+</tbody>
+</table>
+<h1 id="conclusion">Conclusion</h1>
+<p>Vector clocks are used for communicating the notion of logical time between processes in a distributed system. Due to the size of vector clocks increasing linearly with the number of processes in the system, they might not be very scalable depending on the limits of payload size. Encoded vector clocks are a consice alternative to vector clocks which reduce the payload size considerably. They are also efficient when the system wide reset parameters are tuned well. When implementing Encoded vector clocks in a distributed system, one must ensure that the data type storing the encoded clock is ergonomic to use and provide a good abstraction to interact with the clock since the order of operations is very important in maintaining causality between events. Care must also be taken when determinig the upper bound of the size in bits of the encoded clock depending on the memory requirements of the system</p>
+<p>Log encoded vector clocks are a futher extention of Encoded vector clocks, but when implementing Log encoded vector clocks, care must be taken when performing arithmetic operations using arbitrary precision libraries as errors might occur due to precision loss. If a certain threshold of false negative results can be tolerated in the system, Log encoded vector clocks are a great, more concise alternative to vector clocks. When implementing Log encoded vector clocks, the system wide reset must take this threshold in mind when determining the reset condition. Existing libraries for arbitrary precision arithmetic must also be evaluated to ensure all the required operations can be performed and that they are performant and efficient since they can become CPU and memory intensive quickly is care is not take.</p>
+</body>
+</html>

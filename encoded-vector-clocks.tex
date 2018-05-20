@@ -1,0 +1,488 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\usepackage{hyperref}
+\hypersetup{
+            pdftitle={Encoded Vector Clocks},
+            pdfauthor={Implementation study},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage{longtable,booktabs}
+% Fix footnotes in tables (requires footnote package)
+\IfFileExists{footnote.sty}{\usepackage{footnote}\makesavenoteenv{longtable}}{}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+
+\title{Encoded Vector Clocks}
+\author{Implementation study}
+\date{Author Bhargav Voleti}
+
+\begin{document}
+\maketitle
+
+\hypertarget{abstract}{%
+\section{Abstract}\label{abstract}}
+
+Vector clocks are used in for keeping track of time in a distributed
+system. Since a global physical clock is not possible, logical clocks
+are used instead. Vector clocks are a form of logical clocks. The issue
+with vector clocks is the size of the payload being transmitted between
+nodes. Encoded vector clocks are an optimization wherein an encoded
+version of the vector clock is sent as a part of the payload. This paper
+talks about the implementation of a hypothetical system and shows the
+results of using vector clocks to transmit information regarding time in
+a distributed system.
+
+\hypertarget{architecture}{%
+\section{Architecture}\label{architecture}}
+
+I chose Rust as the language to implement this system. According to its
+\href{https://www.rust-lang.org/en-US/}{website} the Rust programming
+language provides the following guarantees:
+
+\begin{quote}
+A systems programming language that runs blazingly fast prevents
+segfaults, and guarantees thread safety.
+\end{quote}
+
+This means a whole class of bugs related to multi-threaded programs are
+eliminated by the compiler. It also encourages message passing as a way
+of sharing data between threads and provides thread-safe data structures
+to share state between threads which is also memory safe, the safety of
+which is guaranteed by the compiler. All of this means that there are no
+data races in the system and the programmer is very productive in
+building a multi-threaded system. I personally found the notion of ``if
+it compiles, it runs'' very refreshing.
+
+The system is built as an asynchronous message passing system where each
+thread represents a process in a distributed system. The number of
+threads can be configured by a configuration file. This configuration
+file can be used to configure a few other parameters:
+
+\begin{itemize}
+\tightlist
+\item
+  \texttt{num\_processes}: Number of processes in the system
+\item
+  \texttt{max\_bits}: Maximum size in bits of the encoded vector clock.
+\item
+  \texttt{timeout}: Timeouts for the various channels used for message
+  passing
+\item
+  \texttt{float\_precision}: Size of mantissa used for arbitrary
+  precision floating values
+\item
+  \texttt{max\_events}: Maximum number of events allowed.
+\end{itemize}
+
+Using these 5 values we can control different parameters of the
+simulation, thus gaining an understanding of the system under different
+conditions.
+
+The system consists of three main types of processes
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Processes
+\item
+  Dispatcher
+\item
+  Collector
+\end{enumerate}
+
+Infomation is shared in the system using message passing. Messages are
+passed on FIFO channels which are thread safe and act as queues for the
+processes.
+
+\hypertarget{process}{%
+\subsection{Process}\label{process}}
+
+A process is a type of thread which simulates a process in the
+distributed system. It keeps track of its vector clock and has a handle
+for the receiving end of a channel on which it receives Send messages
+from other processes. It also has a handle for the sending end of a
+channel to the collector. This is so that events can be sent to the
+collector to be processed.
+
+The Process is responsible for maintaining the following clocks:
+
+\begin{itemize}
+\tightlist
+\item
+  The vector clock
+\item
+  The Encoded vector clock
+\end{itemize}
+
+The process updates these clocks as a part of the steps in its operating
+loop. It first waits for \texttt{timeout} number of milliseconds on the
+receiving channel for any new send messages dispatched to it. If a
+timeout occurs, it then randomly selects between an Internal event or a
+Send event. The probability of this choice is hardcoded but can be
+changed pretty quickly between different runs of the experiments. For
+all experiments except otherwise specified the probability for an
+Internal vs Send event is 50:50. Once an event is generated, it then is
+handled. The process has a central event handler which updates the
+clocks according to the type of event which then dispatches to the
+appropriate event handler based on the type of the event to be acted
+upon.
+
+If it is an Internal event, the thread sleeps for \texttt{timeout}
+milliseconds as a way of simulating some internal event. Once the thread
+wakes up, it goes back to waiting on the receiver.
+
+If it a Send event, the thread dispatches the event to the Dispatcher
+thread to be sent to a random process and goes back to waiting on the
+receiver.
+
+If the thread receives a message within \texttt{timeout} milliseconds,
+it handles the message received and generates a corresponding receive
+event which is then sent to the collector to be recorded.
+
+The vector clock and the Encoded vector clocks are updated according to
+their rules when handling the different events generated by the system.
+
+\hypertarget{dispatcher}{%
+\subsection{Dispatcher}\label{dispatcher}}
+
+These threads simulate the asynchronous message passing layer in the
+system. All processes when generating a Send event and sending a message
+to another process actually send the message to the dispatcher thread.
+This is because the number of channels required would be exponential
+with relation to the number of the processes if all processes directly
+communicated with all other processes. Having a single dispatcher thread
+reduces the number of channels down to a linear scale, that is the
+number of channels equals the number of processes in the system.
+
+Since we are simulating a distributed system, we don't really care about
+which process the event is being dispatched to, as long as it is not
+being dispatched to the process that first created it. Therefore, the
+dispatcher when selecting a random process to dispatch an event to
+considers this rule.
+
+We also use the destruction of the sending end of all channels held by
+processes as a signal that the simulation has ended. This means the
+dispatcher is where the end condition is monitored for, and when the
+dispatcher thread exits, the receiving ends of all the channels for the
+processes in the system have their destructors called. This signals the
+end of the simulation to all the threads in the system who exit.
+
+Before the dispatcher thread exits, it sends a special End message to
+the collector thread to signal the end of the simulation. The collector
+then can start processing all the events it collected.
+
+\hypertarget{collector}{%
+\subsection{Collector}\label{collector}}
+
+The collector thread is responsible for collecting all the events sent
+from the processes and once it gets the signal for the end of the
+simulation, processing all the events. The messages sent to the
+collector are of a different type called Messages. This is so that they
+can be differentiated from the events also being passed between the
+different threads in the system.
+
+Using Rust's enums, a form of \emph{algebraic data types}, we can send a
+message of the type Data which contains the event as the value of the
+type, or we can send a message of type End which signals the end.
+Depending on the type of the message received the collector stores
+events in the appropriate data structures which would make for easier
+processing of the data.
+
+A shard config object is also a part of the collector, which is used to
+track the number of End messages to be received to signal the end of the
+simulation. This number is always \texttt{num\_processes\ +\ 1} since
+all the simulation is over after all the processes and the dispatcher
+thread have exited.
+
+The collector all logs various information as the simulation is being
+run, such as the size of the encoded vector clock vs the total number of
+events at a given instant. It also logs the results of processing the
+events after the operation has been performed.
+
+\hypertarget{gathering-data}{%
+\section{Gathering data}\label{gathering-data}}
+
+All events are logged and sent to the collector to be processed. The
+system uses different levels of logging as a way of filtering out data.
+There are two different loggers configured at different levels for this
+purpose. A file logger handles all logs over the log level Error and a
+terminal logger handles all logging logs from the log level Info. This
+is to separate data from general system information.
+
+The terminal logger is used to monitor the general state of the system
+during runs and to spot any issues with the current running simulation.
+The file logger is used to gather information to be processed and
+plotted out.
+
+Thus using logging gives us a simple, fast and efficient way to filter
+data to the appropriate places.
+
+The data is taken from the log file, cleaned and converted to CSV to be
+further processed by a python script. The python script also uses
+Matplotlib to plot the data in the appropriate graph.
+
+\hypertarget{findings}{%
+\section{Findings}\label{findings}}
+
+All the following graphs were plotted with the mean of the data
+collected from ten individual runs.
+
+\hypertarget{events-vs-number-of-processes}{%
+\subsection{Events vs number of
+processes}\label{events-vs-number-of-processes}}
+
+\includegraphics{num-processes-vs-events.png}
+
+As it can be seen, the relationship between the number of processes and
+the total number of system events is very linear. As the number of
+processes in the system grows, the number of events grow with it. This
+is to be expected since the number of send vs internal events per
+process stays at the same value for a given \texttt{max\_bits}(capped to
+\(32 * n\)) size of the encoded vector clock.
+
+\hypertarget{size-of-evc-vs-number-of-processes}{%
+\subsection{Size of EVC vs number of
+processes}\label{size-of-evc-vs-number-of-processes}}
+
+This data was gathered for a various number of processes, once the size
+of the EVC hit \(32 * num_processes\) the simulation stopped.
+
+\hypertarget{processes}{%
+\subsubsection{10 processes}\label{processes}}
+
+\includegraphics{size-num-n-10.png}\\
+Simulation stops when size of evc becomes 320 bits.
+
+\hypertarget{processes-1}{%
+\subsubsection{30 processes}\label{processes-1}}
+
+\includegraphics{size-vs-events-n-30.png}\\
+Simulation stops when size of evc becomes 960 bits.
+
+\hypertarget{processes-2}{%
+\subsubsection{60 processes}\label{processes-2}}
+
+\includegraphics{size-vs-events-n-60.png}\\
+Simulation stops when size of evc becomes 1920 bits.
+
+\hypertarget{processes-3}{%
+\subsubsection{100 processes}\label{processes-3}}
+
+\includegraphics{size-vs-events-n-100.png}\\
+The simulation stops when the size of EVC becomes 3200 bits.
+
+As we can see, as the number of events in the system increases, the size
+of the EVC increases exponentially. In a real-world system, this would
+be problematic since this would mean each process's memory would see
+unbounded growth. To negate this, the system can be reset after the EVC
+hits a certain size. at 3200 bits and 100 processes, on my machine, I
+saw the memory consumption of my application rise up to 80 MB. Therefore
+depending on the amount of memory available on the machine, the correct
+threshold for resetting the logical clocks in the system can be
+evaluated.
+
+\hypertarget{false-negatives-and-false-positives-with-logarithms}{%
+\subsection{False negatives and false positives with
+Logarithms}\label{false-negatives-and-false-positives-with-logarithms}}
+
+One way to put a bound on the size of the Encoded Vector Clock would be
+to use its logarithm instead of the encoded clock itself. The Log
+encoded vector clock can be hooked into the operational loop of the
+process without a lot of changes and the rules for updating the log
+clock are pretty straightforward.
+
+The issue with Log clocks is the precision lost during the conversion
+between arbitrary precision Integer types and Floating point types. This
+conversion is required because arbitrary precision Integer types do not
+have a Logarithm method on them. While the Floating point type do not
+have numerical methods such as finding the greatest common divisor and
+the least common multiple, thus requiring the conversion between the two
+types to perform the merge operation. This leads to a lot of precion
+being lost which subsequently leads to a very high number of false
+negative causalities between different events in the system.
+
+As of this implementation, the most stable and mature libraries for
+arbitrary precision operations are GMP (GNU Multiprecision Arithmetic
+Library) and MPFR(GNU Multiple Precision Floating-Point Reliably). While
+these libraries are written in C, various languages have bindings for
+them and the issues stated in the previous paragraph exist for these
+libraries as well.
+
+The following results are obtained after the post processnig of all the
+events. The Log encoded EVC is derived from the Envoded vector clock
+stored as a part of the events and compared.
+
+\hypertarget{false-negatives-send-to-internal-events-6040}{%
+\subsubsection{False negatives, Send to Internal events:
+60:40}\label{false-negatives-send-to-internal-events-6040}}
+
+\includegraphics{percent-false-negatives-final.png}
+
+\hypertarget{false-positives-send-to-internal-events-6040}{%
+\subsubsection{False positives, Send to Internal events:
+60:40}\label{false-positives-send-to-internal-events-6040}}
+
+\includegraphics{percent-false-positives-final.png}
+
+The ratio of Send to Internal events was chosen to be representative
+values which could be seen in an application implementing a distributed
+algorithm. In such algorithms, the number of communication events are
+higher than the number of internal events.
+
+The data for false positives when tabulated can be seen in the following
+table
+
+\begin{longtable}[]{@{}lrc@{}}
+\toprule
+Processes & Precision & Values\tabularnewline
+\midrule
+\endhead
+20 & 32 & 0.31665 0.30758 0.28719 0.33138 0.31444 0.31542 0.30332
+0.31548 0.30997 0.31665\tabularnewline
+20 & 64 & 0.44953 0.45569 0.41694 0.45402 0.43961 0.43111 0.42883
+0.42387 0.45154 0.45206\tabularnewline
+20 & 128 & 0.79339 0.86010 0.76939 0.77843 0.74880 0.83137 0.77831
+0.81601 0.79816 0.73537\tabularnewline
+20 & 256 & 1.97964 1.98047 2.12512 1.94411 2.05359 2.05424 1.95456
+1.97545 2.04732 1.95365\tabularnewline
+20 & 512 & 7.25771 7.03398 6.97330 6.67392 7.32091 6.44801 6.90686
+7.13905 6.62202 6.56266\tabularnewline
+20 & 1024 & 23.18612 22.28660 23.17450 23.07309 23.72473 23.00904
+23.81090 23.52973 23.80274 23.31090\tabularnewline
+30 & 32 & 0.28379 0.27285 0.30916 0.28091 0.28761 0.29666 0.28300
+0.27216 0.27739 0.29040\tabularnewline
+30 & 64 & 0.40642 0.40290 0.41568 0.44268 0.37265 0.40533 0.41893
+0.41246 0.39222 0.38170\tabularnewline
+30 & 128 & 0.61890 0.66011 0.59399 0.63966 0.63393 0.64288 0.62241
+0.55565 0.61571 0.62766\tabularnewline
+30 & 256 & 1.20158 1.12940 1.36689 1.20082 1.19002 1.22598 1.03244
+1.11866 1.14618 1.27355\tabularnewline
+30 & 512 & 2.77064 2.87666 3.02917 2.98625 3.13588 2.79424 3.08629
+3.22801 3.13916 3.14108\tabularnewline
+30 & 1024 & 11.20100 11.20489 11.10317 11.36577 10.96241 11.34973
+10.29351 10.32599 10.95683 11.53487\tabularnewline
+40 & 32 & 0.30286 0.27427 0.27664 0.28613 0.27312 0.26441 0.29427
+0.24481 0.27627 0.26339\tabularnewline
+40 & 64 & 0.38625 0.38579 0.38094 0.36683 0.35557 0.44276 0.37033
+0.35661 0.36289 0.36834\tabularnewline
+40 & 128 & 0.55462 0.66420 0.64978 0.57506 0.57161 0.58147 0.58840
+0.51038 0.58256 0.54533\tabularnewline
+40 & 256 & 1.08502 1.17508 1.14674 1.07074 0.99548 1.05416 1.10490
+1.08530 1.06174 1.18297\tabularnewline
+40 & 512 & 2.61473 2.27032 2.49205 2.18779 2.53600 2.20652 2.49827
+2.46028 2.20632 2.26336\tabularnewline
+40 & 1024 & 7.19037 6.94396 6.08392 6.53027 6.00166 6.58373 6.75538
+6.55808 7.30790 6.34314\tabularnewline
+50 & 32 & 0.27101 0.26983 0.27837 0.27115 0.25438 0.26841 0.27315
+0.27527 0.28145 0.26491\tabularnewline
+50 & 64 & 0.40471 0.38140 0.40085 0.33570 0.37286 0.38317 0.36825
+0.36961 0.40718 0.38353\tabularnewline
+50 & 128 & 0.66467 0.62601 0.57133 0.60300 0.55951 0.56010 0.65993
+0.63768 0.56762 0.57213\tabularnewline
+50 & 256 & 1.03608 1.01742 1.02343 0.95972 0.96506 1.05243 1.04639
+0.93893 1.10869 1.63819\tabularnewline
+50 & 512 & 2.27650 1.93359 2.24797 2.16585 2.11063 2.35157 1.99045
+1.99210 2.13128 2.15901\tabularnewline
+50 & 1024 & 5.05560 4.86055 5.55859 5.62966 5.11641 5.43125 4.84803
+5.22132 5.55859 5.62966\tabularnewline
+60 & 32 & 0.27552 0.28610 0.26558 0.27609 0.29946 0.27163 0.26634
+0.26975 0.29223 0.27328\tabularnewline
+60 & 64 & 0.39934 0.40590 0.38240 0.38059 0.40750 0.39952 0.38016
+0.39654 0.40195 0.40440\tabularnewline
+60 & 128 & 0.58355 0.61163 0.57379 0.58934 0.61180 0.63735 0.64056
+0.61441 0.64038 0.61962\tabularnewline
+60 & 256 & 1.09961 1.09455 1.19368 1.04881 1.12992 1.11363 1.13684
+1.17967 1.05420 0.98671\tabularnewline
+60 & 512 & 2.27799 1.91919 1.95493 2.07210 2.14393 2.07478 2.30369
+2.25949 2.17937 2.30274\tabularnewline
+60 & 1024 & 4.97890 4.76711 5.26248 5.12480 4.96600 4.60927 4.81423
+5.53426 5.07870 4.79826\tabularnewline
+\bottomrule
+\end{longtable}
+
+\hypertarget{conclusion}{%
+\section{Conclusion}\label{conclusion}}
+
+Vector clocks are used for communicating the notion of logical time
+between processes in a distributed system. Due to the size of vector
+clocks increasing linearly with the number of processes in the system,
+they might not be very scalable depending on the limits of payload size.
+Encoded vector clocks are a consice alternative to vector clocks which
+reduce the payload size considerably. They are also efficient when the
+system wide reset parameters are tuned well. When implementing Encoded
+vector clocks in a distributed system, one must ensure that the data
+type storing the encoded clock is ergonomic to use and provide a good
+abstraction to interact with the clock since the order of operations is
+very important in maintaining causality between events. Care must also
+be taken when determinig the upper bound of the size in bits of the
+encoded clock depending on the memory requirements of the system
+
+Log encoded vector clocks are a futher extention of Encoded vector
+clocks, but when implementing Log encoded vector clocks, care must be
+taken when performing arithmetic operations using arbitrary precision
+libraries as errors might occur due to precision loss. If a certain
+threshold of false negative results can be tolerated in the system, Log
+encoded vector clocks are a great, more concise alternative to vector
+clocks. When implementing Log encoded vector clocks, the system wide
+reset must take this threshold in mind when determining the reset
+condition. Existing libraries for arbitrary precision arithmetic must
+also be evaluated to ensure all the required operations can be performed
+and that they are performant and efficient since they can become CPU and
+memory intensive quickly is care is not take.
+
+\end{document}

@@ -14,16 +14,18 @@
 //! across.
 
 use std::thread::spawn;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::sync::mpsc::channel;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 #[macro_use]
 extern crate log;
+extern crate rug;
 #[macro_use]
 extern crate serde_derive;
 extern crate simplelog;
+extern crate rayon;
 
 mod utils;
 mod config;
@@ -64,9 +66,13 @@ fn main() {
         simplelog::TermLogger::new(simplelog::LevelFilter::Info, simplelog::Config::default())
             .expect("Failed to create term logger"),
         simplelog::WriteLogger::new(
-            simplelog::LevelFilter::Debug,
+            simplelog::LevelFilter::Error,
             simplelog::Config::default(),
-            File::create("rust-evc.log").expect("Failed to create log file"),
+            OpenOptions::new()
+                .read(true)
+                .append(true)
+                .open("log-check-fp.log")
+                .expect("Failed to create log file"),
         ),
     ]).expect("Failed to init logger");
 
@@ -102,7 +108,7 @@ fn main() {
         process_map,
         shared_config.clone(),
     );
-    let collector_process = Collector::new(collector_receiver);
+    let collector_process = Collector::new(collector_receiver, shared_config.clone());
 
     thread_handles.push(spawn(move || run_dispatch(dispatch_process)));
     thread_handles.push(spawn(move || run_collector(collector_process)));

@@ -2,3 +2,7 @@
 /target/
 **/*.rs.bk
 *.log
+.vscode
+.idea
+tags
+*.png
