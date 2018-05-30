@@ -71,7 +71,7 @@ fn main() {
             OpenOptions::new()
                 .read(true)
                 .append(true)
-                .open("log-check-fp.log")
+                .open("./logs/clean-up-part-one.log")
                 .expect("Failed to create log file"),
         ),
     ]).expect("Failed to init logger");

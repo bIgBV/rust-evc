@@ -17,7 +17,7 @@ pub struct Collector {
     event_pairs: Vec<Pair>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 struct Metrics {
     false_negatives: u32,
     false_positives: u32,
@@ -41,54 +41,49 @@ impl Collector {
             match message {
                 Message::Data(e) => {
                     let evc_size = &e.encoded_clock.significant_bits();
+                    error!(
+                        "{}, {}",
+                        e.id,
+                        evc_size
+                    );
                     self.events.push(e);
-
-                    // if self.events.len() % 2 == 0 {
-                    //     error!(
-                    //         "{}, {}",
-                    //         self.events.len(),
-                    //         evc_size
-                    //     );
-                    // }
                 }
                 Message::End => {
                     self.end_counter += 1;
 
                     if self.end_counter == self.config.num_processes + 1 {
-                        //error!(
-                        //    "Processes: {} Events: {}.",
-                        //    self.config.num_processes,
-                        //    self.events.len()
-                        //);
+                        // let event_pairs = generate_permutations(&self.events);
+                        // let metrics = check_log_metrics(event_pairs, self.config.float_precision);
+                        // info!("Metrics: {:?}", metrics);
 
-                        //let false_positives =
-                        //    count_false_positives(self.config.float_precision, &self.event_pairs);
-                        //error!(
-                        //    "Total pairs: {} false positives: {}",
-                        //    self.event_pairs.len(),
-                        //    false_positives
-                        //);
+                        // let fn_error_rate = (metrics.false_negatives
+                        //     / (metrics.false_negatives + metrics.true_positives))
+                        //     as f64 * 100_f64;
+                        // let fp_error_rate = (metrics.false_positives
+                        //     / (metrics.false_positives + metrics.true_negatives))
+                        //     as f64 * 100_f64;
 
-                        let event_pairs = generate_permutations(&self.events);
-                        let length = event_pairs.len();
-                        // let (false_negatives, false_positives) =
-                        //     check_log_clocks(event_pairs, self.config.float_precision);
-
-                        let false_positives =
-                            check_log_clocks_fp(event_pairs, self.config.float_precision);
-
-                        error!(
-                            "{}, {}, {}, {}",
-                            self.config.num_processes,
-                            self.config.float_precision,
-                            self.config.max_bits,
-                            (false_positives as f64 / length as f64) * 100_f64
-                        );
+                        // error!(
+                        //     "{}, {}, {}, {}, {}",
+                        //     self.config.num_processes,
+                        //     self.config.float_precision,
+                        //     self.config.max_bits,
+                        //     fn_error_rate,
+                        //     fp_error_rate
+                        // );
 
                         break;
                     }
                 }
-                Message::Pair(p) => self.event_pairs.push(p),
+                Message::Pair(p) => {
+                    let evc_size = &p.receive.encoded_clock.significant_bits();
+                    error!(
+                        "{}, {}",
+                        p.receive.id,
+                        evc_size
+                    );
+                    self.event_pairs.push(p);
+                }
             }
         }
     }
@@ -105,27 +100,25 @@ fn check_log_clocks(pairs: Vec<Pair>, prec: u32) -> (u32, u32) {
     (false_negatives, false_positives)
 }
 
-fn check_log_clocks_fp(pairs: Vec<Pair>, prec: u32) -> Metrics {
-    let mut final_counts = Metrics {
+fn check_log_metrics(pairs: Vec<Pair>, prec: u32) -> Metrics {
+    let final_counts = Metrics {
         false_negatives: 0,
         false_positives: 0,
         true_negatives: 0,
         true_positives: 0,
     };
 
-    let false_positives = pairs
-        .iter()
-        .map(|pair| count_false_positives(&pair, prec))
-        .fold(final_counts, |acc: Metrics, metric: Metrics| {
-            Metrics {
-                false_positives: acc.false_positives + metric.false_positives,
-                false_negatives: acc.false_negatives + metric.false_negatives,
-                true_negatives: acc.true_negatives + metric.true_negatives,
-                true_positives: acc.true_positives + metric.true_positives,
-            }
-        });
+    pairs
+    .iter()
+    .map(|pair| count_false_positives(&pair, prec))
+    .fold(final_counts, |mut acc: Metrics, metric: Metrics| {
+        acc.false_negatives = acc.false_negatives + metric.false_negatives;
+        acc.false_positives = acc.false_positives + metric.false_positives;
+        acc.true_negatives = acc.true_negatives + metric.true_negatives;
+        acc.true_positives = acc.true_positives + metric.true_positives;
 
-    final_counts
+        acc
+    })
 }
 
 fn count_false_positives(pair: &Pair, prec: u32) -> Metrics {
@@ -149,10 +142,12 @@ fn count_false_positives(pair: &Pair, prec: u32) -> Metrics {
             .is_divisible(&pair.send.encoded_clock)
     {
         if log_diff_left.is_integer() || log_diff_right.is_integer() {
+            // info!("Is FN");
             false_positives += 1;
         }
 
         if log_diff_left.is_integer() && log_diff_right.is_integer() {
+            // info!("Is TN");
             true_negatives += 1;
         }
     }
@@ -164,6 +159,7 @@ fn count_false_positives(pair: &Pair, prec: u32) -> Metrics {
             .encoded_clock
             .is_divisible(&pair.receive.encoded_clock) && log_diff_right.is_integer())
     {
+        // info!("Is TP");
         true_positives += 1
     }
 
@@ -174,6 +170,7 @@ fn count_false_positives(pair: &Pair, prec: u32) -> Metrics {
             .encoded_clock
             .is_divisible(&pair.receive.encoded_clock) && !log_diff_right.is_integer())
     {
+        // info!("Is FP");
         false_negatives += 1;
     }
 

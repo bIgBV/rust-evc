@@ -46,7 +46,7 @@ impl Dispatch {
     /// the senders of all the processes, signalling shutdown.
     pub fn handle_dispatch(mut self) {
         for event in self.receiver.iter() {
-            if event.id as u32 >= self.config.max_bits {
+            if event.encoded_clock.signed_bits() >= self.config.max_bits {
                 debug!("Closing simulation.");
                 self.collector
                     .send(Message::End)
@@ -65,10 +65,10 @@ impl Dispatch {
 
                 if let Some(process_id) = rand::thread_rng().choose(&self.process_ids) {
                     if let Some(sender) = self.process_map.get(process_id) {
-                        info!(
-                            "Send from: {} Dispatching to : {}",
-                            event.process_id, process_id
-                        );
+                        // info!(
+                        //     "Send from: {} Dispatching to : {}",
+                        //     event.process_id, process_id
+                        // );
                         sender
                             .send(event)
                             .unwrap_or_else(|e| error!("Error dispatching: {}", e));

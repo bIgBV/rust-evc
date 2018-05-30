@@ -87,7 +87,7 @@ impl Process {
             }
         }
 
-        info!("p: {} closing process", self.id)
+        // info!("p: {} closing process", self.id)
     }
 
     /// Event creator.
@@ -295,7 +295,7 @@ impl Process {
             &self.log_evc,
             self.id,
         );
-        info!("p: {}: internal event", self.id);
+        // info!("p: {}: internal event", self.id);
         self.collector
             .send(Message::Data(event))
             .unwrap_or_else(|e| error!("p: {} error sending event to collector: {}", self.id, e));

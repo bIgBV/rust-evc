@@ -63,15 +63,14 @@ for key, val in result.items():
 updated_result = {}
 
 for key, val in result.items():
-    if len(val) > 5:
-        updated_result[key] = val
+    updated_result[key] = val
 
 mean_data = {}
 
 for key, val in updated_result.items():
     mean_data[int(key)] = sum(val) / len(val)
 
-N = 3
+N = 5
 cumsum, moving_aves = [0], []
 
 for i, x in enumerate(mean_data.values(), 1):
@@ -83,7 +82,9 @@ for i, x in enumerate(mean_data.values(), 1):
 
 plt.xlabel('Number of events')
 plt.ylabel('Size of Encoded Vector clock')
-plt.title('Rate of increase of EVC size. Processes: 100')
+plt.title('Rate of increase of EVC size. Processes: 10')
 
-plt.plot(list(mean_data.keys())[:len(moving_aves)], sorted(moving_aves))
+cleaned_size = list((i for i in mean_data.keys() if i <= 320))
+
+plt.plot(sorted(moving_aves)[:len(cleaned_size)], cleaned_size)
 plt.show()
