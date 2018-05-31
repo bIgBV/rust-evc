@@ -60,31 +60,30 @@ for key, val in result.items():
     new_val = [float(i.strip()) for i in val]
     result[key.strip(':')] = new_val
 
-updated_result = {}
-
-for key, val in result.items():
-    updated_result[key] = val
-
 mean_data = {}
 
-for key, val in updated_result.items():
-    mean_data[int(key)] = sum(val) / len(val)
+for key, val in result.items():
+    mean = sum(val) / len(val)
+    if mean <= 960:
+        mean_data[int(key)] = mean
 
-N = 5
-cumsum, moving_aves = [0], []
-
-for i, x in enumerate(mean_data.values(), 1):
-    cumsum.append(cumsum[i-1] + x)
-    if i>=N:
-        moving_ave = (cumsum[i] - cumsum[i-N])/N
-        #can do stuff with moving_ave here
-        moving_aves.append(moving_ave)
+# N = 5
+# cumsum, moving_aves = [0], []
+# 
+# for i, x in enumerate(mean_data.values(), 1):
+#     cumsum.append(cumsum[i-1] + x)
+#     if i>=N:
+#         moving_ave = (cumsum[i] - cumsum[i-N])/N
+#         #can do stuff with moving_ave here
+#         moving_aves.append(moving_ave)
 
 plt.xlabel('Number of events')
 plt.ylabel('Size of Encoded Vector clock')
 plt.title('Rate of increase of EVC size. Processes: 10')
 
-cleaned_size = list((i for i in mean_data.keys() if i <= 320))
+# cleaned_size = list((i for i in mean_data.keys() if i <= 320))
 
-plt.plot(sorted(moving_aves)[:len(cleaned_size)], cleaned_size)
+# plt.plot(sorted(moving_aves)[:len(cleaned_size)], cleaned_size)
+plt.plot(sorted(mean_data.keys()), mean_data.values())
+plt.xticks(range(int(min(mean_data.values())), int(max(mean_data.values())), 300))
 plt.show()

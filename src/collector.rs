@@ -41,12 +41,12 @@ impl Collector {
             match message {
                 Message::Data(e) => {
                     let evc_size = &e.encoded_clock.significant_bits();
-                    error!(
-                        "{}, {}",
-                        e.id,
-                        evc_size
-                    );
+                    let e_copy = e.clone();
                     self.events.push(e);
+
+                    if self.events.len() - 1 % 5 == 0 {
+                        error!("{}, {}", self.events.len() - 1, evc_size);
+                    }
                 }
                 Message::End => {
                     self.end_counter += 1;
@@ -72,16 +72,24 @@ impl Collector {
                         //     fp_error_rate
                         // );
 
+                        // print out the last captured event
+                        error!(
+                            "{}, {}",
+                            self.events.len() - 1,
+                            self.events[self.events.len() - 1]
+                                .encoded_clock
+                                .significant_bits()
+                        );
+
                         break;
                     }
                 }
                 Message::Pair(p) => {
                     let evc_size = &p.receive.encoded_clock.significant_bits();
-                    error!(
-                        "{}, {}",
-                        p.receive.id,
-                        evc_size
-                    );
+                    self.events.push(p.receive.clone());
+                    if self.events.len() - 1 % 5 == 0 {
+                        error!("{}, {}", self.events.len() - 1, evc_size);
+                    }
                     self.event_pairs.push(p);
                 }
             }
@@ -109,16 +117,16 @@ fn check_log_metrics(pairs: Vec<Pair>, prec: u32) -> Metrics {
     };
 
     pairs
-    .iter()
-    .map(|pair| count_false_positives(&pair, prec))
-    .fold(final_counts, |mut acc: Metrics, metric: Metrics| {
-        acc.false_negatives = acc.false_negatives + metric.false_negatives;
-        acc.false_positives = acc.false_positives + metric.false_positives;
-        acc.true_negatives = acc.true_negatives + metric.true_negatives;
-        acc.true_positives = acc.true_positives + metric.true_positives;
+        .iter()
+        .map(|pair| count_false_positives(&pair, prec))
+        .fold(final_counts, |mut acc: Metrics, metric: Metrics| {
+            acc.false_negatives = acc.false_negatives + metric.false_negatives;
+            acc.false_positives = acc.false_positives + metric.false_positives;
+            acc.true_negatives = acc.true_negatives + metric.true_negatives;
+            acc.true_positives = acc.true_positives + metric.true_positives;
 
-        acc
-    })
+            acc
+        })
 }
 
 fn count_false_positives(pair: &Pair, prec: u32) -> Metrics {
